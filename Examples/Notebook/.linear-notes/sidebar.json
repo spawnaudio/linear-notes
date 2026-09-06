@@ -1,0 +1,31 @@
+{
+  "bookmarks" : [
+    "Welcome.md",
+    "Reference\/Editor guide.md"
+  ],
+  "expanded" : [
+    ""
+  ],
+  "lastSelected" : "Welcome.md",
+  "order" : {
+    "" : [
+      "Ideas",
+      "Projects",
+      "Reference",
+      "Welcome.md"
+    ],
+    "Ideas" : [
+      "Ideas\/Small things.md"
+    ],
+    "Projects" : [
+      "Projects\/Notes app.md"
+    ],
+    "Reference" : [
+      "Reference\/Editor guide.md"
+    ]
+  },
+  "pinned" : [
+
+  ],
+  "version" : 1
+}

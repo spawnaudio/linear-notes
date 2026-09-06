@@ -1,0 +1,9 @@
+.build/
+dist/
+Editor/node_modules/
+Editor/test-results/
+artifacts/*.png
+artifacts/*.log
+.build-cache/
+.DS_Store
+*.xcuserstate

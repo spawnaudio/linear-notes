@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data: file:; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Linear Notes Editor</title>
+  <link rel="stylesheet" href="editor.css">
+</head>
+<body>
+  <div id="formatbar" role="toolbar" aria-label="Formatting">
+    <button data-command="paragraph" title="Paragraph">Text <span class="down">⌄</span></button>
+    <span class="separator"></span>
+    <button data-command="bold" title="Bold · ⌘B"><b>B</b></button>
+    <button data-command="italic" title="Italic · ⌘I"><i>I</i></button>
+    <button data-command="strike" title="Strikethrough · ⌘⇧S"><s>S</s></button>
+    <button data-command="code" title="Inline code · ⌘E">‹›</button>
+    <button data-command="link" title="Link · ⌘K">↗</button>
+    <span class="separator"></span>
+    <button data-command="bullet" title="Bullet list · ⌘⇧8">☷</button>
+    <button data-command="task" title="Checklist · ⌘⇧7">☑</button>
+    <button data-command="quote" title="Quote">❞</button>
+    <span class="toolbar-hint">Type <kbd>/</kbd> for commands</span>
+  </div>
+  <main id="page">
+    <div id="properties" aria-label="Document properties"></div>
+    <div id="editor"></div>
+    <textarea id="source" spellcheck="false" aria-label="Markdown source" hidden></textarea>
+    <div id="endnote">A little space for your next thought.</div>
+  </main>
+  <div id="slash" class="popover" role="listbox" aria-label="Insert a block" hidden></div>
+  <div id="bubble" class="popover" role="toolbar" aria-label="Selection formatting" hidden>
+    <button data-command="bold"><b>B</b></button><button data-command="italic"><i>I</i></button><button data-command="strike"><s>S</s></button><button data-command="code">‹›</button><button data-command="link">↗</button>
+  </div>
+  <dialog id="link-dialog">
+    <form method="dialog" id="link-form">
+      <h2>Add a link</h2><p>Keep it inline, or give it a little more space.</p>
+      <label>URL<input id="link-url" type="url" required placeholder="https://…"></label>
+      <label>Display text<input id="link-title" placeholder="A helpful title"></label>
+      <div class="dialog-actions"><button value="cancel" formnovalidate>Cancel</button><button value="link">Markdown link</button><button value="card" class="primary">Rich card</button></div>
+    </form>
+  </dialog>
+  <dialog id="properties-dialog">
+    <form method="dialog" id="properties-form">
+      <h2>Document properties</h2><p>Stored as YAML at the top of your Markdown file.</p>
+      <textarea id="properties-source" aria-label="YAML properties" spellcheck="false" placeholder="status: draft&#10;tags: [notes]"></textarea>
+      <div class="dialog-actions"><button value="cancel">Cancel</button><button value="save" class="primary">Save properties</button></div>
+    </form>
+  </dialog>
+  <script src="editor.js"></script>
+</body>
+</html>
