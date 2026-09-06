@@ -58,4 +58,12 @@ final class LinkPreviewTests: XCTestCase {
         try library.savePreview(preview, for: url, imageData: nil, type: nil)
         XCTAssertEqual(library.previewIndex["https://example.com/a"]?.title, "Example")
     }
+
+    func testSameOriginAllowsOnlyMatchingHostAndScheme() {
+        let request = URL(string: "https://example.com/article")!
+        XCTAssertTrue(LinkPreviewing.isSameOrigin(URL(string: "https://example.com/other"), as: request))
+        XCTAssertTrue(LinkPreviewing.isSameOrigin(URL(string: "HTTPS://EXAMPLE.com/other"), as: request))
+        XCTAssertFalse(LinkPreviewing.isSameOrigin(URL(string: "https://cdn.example.com/other"), as: request))
+        XCTAssertFalse(LinkPreviewing.isSameOrigin(URL(string: "http://example.com/other"), as: request))
+    }
 }

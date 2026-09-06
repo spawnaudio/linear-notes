@@ -45,6 +45,12 @@ public enum LinkPreviewing {
         fileName(for: url, type: nil)
     }
 
+    public static func isSameOrigin(_ redirectURL: URL?, as requestURL: URL) -> Bool {
+        guard let redirectURL else { return true }
+        return redirectURL.scheme?.lowercased() == requestURL.scheme?.lowercased()
+            && redirectURL.host?.lowercased() == requestURL.host?.lowercased()
+    }
+
     static func fileName(for url: URL, type: String?) -> String {
         let normalized = normalizeURL(url.absoluteString)?.absoluteString ?? url.absoluteString
         let prefix = String(sha256Hex(normalized).prefix(16))
