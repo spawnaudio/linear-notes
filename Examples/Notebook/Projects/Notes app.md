@@ -14,3 +14,8 @@ Beautifully simple, with local Markdown at its heart.
 ### Next step
 
 Use it for a real note. Notice what gets in the way.
+
+
+
+[github.com](<https://github.com/spawnaudio/linear-notes/settings> "card")
+

@@ -79,3 +79,5 @@ Browser tests use the local Google Chrome installation on macOS. `npm run build`
 - External changes are checked every two seconds. Simultaneous writes by editors that ignore file coordination still require care; test with a small notebook first. Very large libraries/files and full accessibility coverage have not been validated.
 
 See [validation notes](docs/VALIDATION.md) and [third-party notices](docs/THIRD_PARTY_NOTICES.md).
+
+Product history is kept in [Linear Notes - v1.0 Ideation](<docs/Linear Notes - v1.0 Ideation.md>) and [Linear Notes MVP - Changelog](<docs/Linear Notes MVP - Changelog.md>). The ideation document preserves the original plan; the changelog records later feature-set updates.
