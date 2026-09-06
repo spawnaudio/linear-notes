@@ -140,6 +140,7 @@ function makeEditor(markdown) {
       },
       handleKeyDown(_view, event) {
         if (!$('slash').hidden) {
+          if (event.key === ' ') { hideSlash(); return false; }
           if (['ArrowDown', 'ArrowUp'].includes(event.key)) { event.preventDefault(); slashIndex = (slashIndex + (event.key === 'ArrowDown' ? 1 : slashMatches.length - 1)) % slashMatches.length; drawSlash(); return true; }
           if (event.key === 'Enter' && slashMatches.length) { event.preventDefault(); chooseSlash(slashMatches[slashIndex]); return true; }
           if (event.key === 'Escape') { hideSlash(); return true; }
@@ -183,12 +184,12 @@ function loadDocument(payload) {
   loading = true; documentID = payload.id; currentMarkdown = payload.markdown; mode = payload.mode || 'live';
   [frontmatter] = splitFrontmatter(currentMarkdown);
   editor?.destroy(); $('editor').replaceChildren(); editor = makeEditor(splitFrontmatter(currentMarkdown)[1]);
-  applyMode(); hideSlash(); $('bubble').hidden = true; window.scrollTo(0, 0); loading = false; reportStats();
+  applyMode(); hideSlash(); hideBubble(); window.scrollTo(0, 0); loading = false; reportStats();
 }
 function applyMode() {
   document.body.dataset.mode = mode;
   $('source').hidden = mode !== 'source'; $('editor').hidden = mode === 'source';
-  $('properties').hidden = mode === 'source'; $('formatbar').style.visibility = mode === 'live' ? '' : 'hidden';
+  $('properties').hidden = mode === 'source';
   $('source').value = currentMarkdown; resizeSource(); editor.setEditable(mode === 'live', false); drawProperties();
   document.querySelectorAll('input[type=checkbox]').forEach(input => input.disabled = mode === 'reading');
 }
@@ -196,7 +197,7 @@ function setMode(next) {
   if (!['source', 'reading', 'live'].includes(next) || next === mode) return;
   loading = true;
   if (mode === 'source') { [frontmatter] = splitFrontmatter(currentMarkdown); editor.destroy(); $('editor').replaceChildren(); editor = makeEditor(splitFrontmatter(currentMarkdown)[1]); }
-  mode = next; applyMode(); hideSlash(); $('bubble').hidden = true; loading = false;
+  mode = next; applyMode(); hideSlash(); hideBubble(); loading = false;
 }
 function resizeSource() { const field = $('source'); field.style.height = 'auto'; field.style.height = `${Math.max(520, field.scrollHeight)}px`; }
 $('source').addEventListener('input', () => { currentMarkdown = $('source').value; send('change', { id: documentID, markdown: currentMarkdown }); reportStats(); resizeSource(); });
@@ -222,7 +223,7 @@ function updateSlash() {
   const { $from, empty } = editor.state.selection;
   if (!empty || $from.parent.type.name !== 'paragraph') return hideSlash();
   const before = $from.parent.textBetween(0, $from.parentOffset);
-  const match = /^\/([\w ]*)$/.exec(before);
+  const match = /^\/(\w*)$/.exec(before);
   if (!match) return hideSlash();
   slashRange = { from: $from.start(), to: $from.pos };
   slashMatches = slashCommands.filter(command => command.name.toLowerCase().includes(match[1].toLowerCase()));
@@ -277,9 +278,7 @@ function execute(command) {
     case 'strike': return chain.toggleStrike().run();
     case 'underline': return chain.toggleUnderline().run();
     case 'code': return chain.toggleCode().run();
-    case 'paragraph': {
-      slashMatches = slashCommands.slice(0, 5); slashIndex = 0; slashRange = null; drawSlash(); return;
-    }
+    case 'paragraph': return chain.setParagraph().run();
     case 'text': return chain.setParagraph().run();
     case 'bullet': return chain.toggleBulletList().run();
     case 'ordered': return chain.toggleOrderedList().run();
@@ -295,20 +294,47 @@ function execute(command) {
   }
 }
 slashCommands[0].id = 'text';
-document.querySelectorAll('[data-command]').forEach(button => button.addEventListener('mousedown', e => { e.preventDefault(); execute(button.dataset.command); }));
+document.querySelectorAll('[data-command]').forEach(button => button.addEventListener('mousedown', e => {
+  e.preventDefault(); execute(button.dataset.command);
+  if (button.closest('#turn-into')) $('turn-into').hidden = true;
+}));
+function hideBubble() { $('bubble').hidden = true; $('turn-into').hidden = true; }
+function currentBlockLabel() {
+  for (const level of [1, 2, 3, 4]) if (editor.isActive('heading', { level })) return `Heading ${level}`;
+  return 'Text';
+}
+function setActiveButton(command, active) {
+  document.querySelector(`#bubble [data-command="${command}"]`)?.classList.toggle('active', active);
+}
 function updateBubble() {
   const { from, to, empty } = editor.state.selection;
   const bubble = $('bubble');
-  if (empty || mode !== 'live' || !$('slash').hidden || editor.state.selection.node) { bubble.hidden = true; return; }
+  if (empty || mode !== 'live' || !$('slash').hidden || editor.state.selection.node) { hideBubble(); return; }
+  $('turn-into-btn').firstChild.textContent = currentBlockLabel() + ' ';
+  setActiveButton('bold', editor.isActive('bold'));
+  setActiveButton('italic', editor.isActive('italic'));
+  setActiveButton('strike', editor.isActive('strike'));
+  setActiveButton('code', editor.isActive('code'));
+  setActiveButton('link', editor.isActive('link'));
+  setActiveButton('bullet', editor.isActive('bulletList'));
+  setActiveButton('task', editor.isActive('taskList'));
+  setActiveButton('quote', editor.isActive('blockquote'));
   const start = editor.view.coordsAtPos(from), end = editor.view.coordsAtPos(to);
-  bubble.hidden = false; bubble.style.top = `${Math.max(46, start.top - 44)}px`; bubble.style.left = `${Math.max(12, Math.min((start.left + end.left) / 2 - 85, innerWidth - 190))}px`;
+  bubble.hidden = false; bubble.style.top = `${Math.max(46, start.top - 44)}px`; bubble.style.left = `${Math.max(12, Math.min((start.left + end.left) / 2 - 150, innerWidth - 330))}px`;
 }
+$('turn-into-btn').addEventListener('mousedown', e => {
+  e.preventDefault();
+  const menu = $('turn-into'), button = $('turn-into-btn').getBoundingClientRect();
+  menu.hidden = !menu.hidden;
+  menu.style.left = `${Math.max(12, Math.min(button.left, innerWidth - 150))}px`;
+  menu.style.top = `${Math.min(button.bottom + 7, innerHeight - Math.min(menu.scrollHeight, 220) - 12)}px`;
+});
 document.addEventListener('click', e => {
   const anchor = e.target.closest('a');
   if (anchor) { e.preventDefault(); if (mode === 'reading' || e.metaKey) openURL(anchor.getAttribute('href')); }
-  if (!e.target.closest('#slash') && !e.target.closest('#formatbar')) hideSlash();
+  if (!e.target.closest('#slash') && !e.target.closest('#bubble') && !e.target.closest('#turn-into')) { hideSlash(); $('turn-into').hidden = true; }
 });
-window.addEventListener('scroll', () => { $('bubble').hidden = true; hideSlash(); }, { passive: true });
+window.addEventListener('scroll', () => { hideBubble(); hideSlash(); }, { passive: true });
 window.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's' && !e.shiftKey) { e.preventDefault(); send('save'); }
 });

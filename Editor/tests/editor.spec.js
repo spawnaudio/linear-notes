@@ -209,3 +209,40 @@ test('checkbox edits persist and source cannot open dangerous URLs as cards', as
   await expect(page.locator('.rich-card')).toHaveCount(0);
   expect(await page.evaluate(() => window.messages.filter(m => m.type === 'openLink'))).toHaveLength(0);
 });
+
+test('has no persistent format bar and formats from the selection popover', async ({ page }) => {
+  await load(page, '# Hello world\n\n');
+  await expect(page.locator('#formatbar')).toHaveCount(0);
+  await page.locator('.tiptap h1').click();
+  await page.keyboard.press('Meta+a');
+  await expect(page.locator('#bubble')).toBeVisible();
+  await page.locator('#bubble [data-command=bold]').click();
+  expect(await markdown(page)).toContain('**Hello world**');
+});
+
+test('slash Space dismisses without inserting a command', async ({ page }) => {
+  await load(page, '');
+  await page.locator('.tiptap').click();
+  await page.keyboard.type('/call');
+  await expect(page.locator('#slash')).toBeVisible();
+  await page.keyboard.press('Space');
+  await expect(page.locator('#slash')).toBeHidden();
+  expect(await markdown(page)).toMatch(/\/call /);
+  await expect(page.locator('.callout')).toHaveCount(0);
+});
+
+test('slash Escape leaves the query', async ({ page }) => {
+  await load(page, '');
+  await page.locator('.tiptap').click();
+  await page.keyboard.type('/call');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#slash')).toBeHidden();
+  expect(await markdown(page)).toContain('/call');
+});
+
+test('link dialog explains local preview lookup', async ({ page }) => {
+  await load(page, '');
+  await page.evaluate(() => window.notes.command('link'));
+  await expect(page.locator('#link-dialog')).toContainText('on your Mac');
+  await expect(page.locator('#link-dialog')).toContainText('Nothing is sent to a Linear Notes server');
+});
