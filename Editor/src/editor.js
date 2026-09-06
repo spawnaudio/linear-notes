@@ -338,7 +338,7 @@ function loadDocument(payload) {
   cardPreviews = new Map();
   [frontmatter] = splitFrontmatter(currentMarkdown);
   editor?.destroy(); $('editor').replaceChildren(); editor = makeEditor(splitFrontmatter(currentMarkdown)[1]);
-  Object.entries(payload.previews || {}).forEach(([url, preview]) => applyCardPreview({ url, ...preview }, { preferTitle: true }));
+  Object.entries(payload.previews || {}).forEach(([url, preview]) => applyCardPreview({ url, ...preview }));
   applyMode(); hideSlash(); hideBubble(); window.scrollTo(0, 0); loading = false; reportStats();
 }
 function applyMode() {
@@ -459,10 +459,14 @@ function execute(command) {
   }
 }
 slashCommands[0].id = 'text';
-document.querySelectorAll('[data-command]').forEach(button => button.addEventListener('mousedown', e => {
-  e.preventDefault(); execute(button.dataset.command);
-  if (button.closest('#turn-into')) $('turn-into').hidden = true;
-}));
+document.querySelectorAll('[data-command]').forEach(button => {
+  button.addEventListener('mousedown', e => e.preventDefault());
+  button.addEventListener('click', e => {
+    e.preventDefault();
+    execute(button.dataset.command);
+    if (button.closest('#turn-into')) $('turn-into').hidden = true;
+  });
+});
 function hideBubble() { $('bubble').hidden = true; $('turn-into').hidden = true; }
 function currentBlockLabel() {
   for (const level of [1, 2, 3, 4]) if (editor.isActive('heading', { level })) return `Heading ${level}`;
@@ -487,7 +491,8 @@ function updateBubble() {
   const start = editor.view.coordsAtPos(from), end = editor.view.coordsAtPos(to);
   bubble.hidden = false; bubble.style.top = `${Math.max(46, start.top - 44)}px`; bubble.style.left = `${Math.max(12, Math.min((start.left + end.left) / 2 - 150, innerWidth - 330))}px`;
 }
-$('turn-into-btn').addEventListener('mousedown', e => {
+$('turn-into-btn').addEventListener('mousedown', e => e.preventDefault());
+$('turn-into-btn').addEventListener('click', e => {
   e.preventDefault();
   const menu = $('turn-into'), button = $('turn-into-btn').getBoundingClientRect();
   menu.hidden = !menu.hidden;
@@ -501,6 +506,7 @@ document.addEventListener('click', e => {
 });
 window.addEventListener('scroll', () => { hideBubble(); hideSlash(); }, { passive: true });
 window.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('turn-into').hidden) { e.preventDefault(); $('turn-into').hidden = true; $('turn-into-btn').focus(); return; }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's' && !e.shiftKey) { e.preventDefault(); send('save'); }
 });
 

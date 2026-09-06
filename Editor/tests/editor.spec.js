@@ -59,23 +59,31 @@ test('cached previews hydrate without fetching', async ({ page }) => {
     window.webkit = { messageHandlers: { notes: { postMessage: message => window.messages.push(message) } } };
     window.notes.load({
       id: 'test.md',
-      markdown: '[mymind](<https://mymind.com> "card")\n',
+      markdown: '[mymind.com](<https://mymind.com> "card")\n\n[mymind](<https://custom.mymind.com> "card")\n',
       mode: 'live',
       previews: {
         'https://mymind.com/': {
           title: 'mymind is the extension for your mind.',
           description: 'A private place to save your most precious notes.',
           imageSrc: pixel
+        },
+        'https://custom.mymind.com/': {
+          title: 'Custom OG title',
+          description: 'A private place to save your most precious notes.',
+          imageSrc: pixel
         }
       }
     });
   }, { pixel });
-  await expect(page.locator('.rich-card')).toHaveClass(/has-preview/);
-  await expect(page.locator('.card-title')).toHaveText('mymind is the extension for your mind.');
-  await expect(page.locator('.card-description')).toContainText('A private place');
-  await expect(page.locator('.rich-card img')).toHaveAttribute('src', pixel);
+  await expect(page.locator('.rich-card')).toHaveCount(2);
+  await expect(page.locator('.rich-card').first()).toHaveClass(/has-preview/);
+  await expect(page.locator('.rich-card').first().locator('.card-title')).toHaveText('mymind is the extension for your mind.');
+  await expect(page.locator('.rich-card').nth(1).locator('.card-title')).toHaveText('mymind');
+  await expect(page.locator('.card-description').first()).toContainText('A private place');
+  await expect(page.locator('.rich-card img').first()).toHaveAttribute('src', pixel);
   expect(await page.evaluate(() => window.messages.filter(m => m.type === 'fetchCardPreview'))).toHaveLength(0);
-  expect(await markdown(page)).toContain('[mymind](<https://mymind.com> "card")');
+  expect(await markdown(page)).toContain('[mymind.com](<https://mymind.com> "card")');
+  expect(await markdown(page)).toContain('[mymind](<https://custom.mymind.com> "card")');
 });
 
 test('applyCardPreview upgrades a compact card and failed images stay compact', async ({ page }) => {
@@ -358,6 +366,22 @@ test('has no persistent format bar and formats from the selection popover', asyn
   await expect(page.locator('#bubble')).toBeVisible();
   await page.locator('#bubble [data-command=bold]').click();
   expect(await markdown(page)).toContain('**Hello world**');
+});
+
+test('turn into menu supports click activation and Escape dismissal', async ({ page }) => {
+  await load(page, '# Hello world\n\n');
+  await page.locator('.tiptap h1').click();
+  await page.keyboard.press('Meta+a');
+  await page.locator('#turn-into-btn').click();
+  await expect(page.locator('#turn-into')).toBeVisible();
+  await page.locator('#turn-into [data-command=text]').dispatchEvent('click', { bubbles: true, cancelable: true });
+  await expect(page.locator('#turn-into')).toBeHidden();
+  await expect(page.locator('.tiptap p').first()).toHaveText('Hello world');
+  await page.keyboard.press('Meta+a');
+  await page.locator('#turn-into-btn').click();
+  await expect(page.locator('#turn-into')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#turn-into')).toBeHidden();
 });
 
 test('slash Space dismisses without inserting a command', async ({ page }) => {

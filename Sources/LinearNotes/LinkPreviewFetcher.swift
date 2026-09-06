@@ -66,23 +66,14 @@ struct LinkPreviewFetcher {
             return (imageURL, nil, nil)
         }
 
-        let (bytes, response) = try await imageSession.bytes(for: request(for: imageURL))
+        let (data, response) = try await imageSession.data(for: request(for: imageURL))
         guard let httpResponse = response as? HTTPURLResponse,
               (200..<300).contains(httpResponse.statusCode),
               let type = mimeType(from: httpResponse),
               (httpResponse.url ?? imageURL).scheme?.lowercased() == "https",
               type.hasPrefix("image/"),
-              isAcceptableImageContentLength(httpResponse) else {
-            return (imageURL, nil, nil)
-        }
-        var data = Data()
-        for try await byte in bytes {
-            guard data.count < Self.maximumImageBytes else {
-                return (imageURL, nil, nil)
-            }
-            data.append(byte)
-        }
-        guard data.count <= Self.maximumImageBytes else {
+              isAcceptableImageContentLength(httpResponse),
+              data.count <= Self.maximumImageBytes else {
             return (imageURL, nil, nil)
         }
         return (httpResponse.url ?? imageURL, data, type)

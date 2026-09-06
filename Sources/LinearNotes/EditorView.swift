@@ -28,7 +28,9 @@ import NotesCore
         guard ready, let store, let webView else { return }
         if loadedVersion != store.documentVersion {
             var payload: [String: Any] = ["id": store.selected ?? "", "markdown": store.markdown, "mode": store.mode.rawValue]
-            payload["previews"] = store.cardPreviewsJSON()
+            if store.markdown.contains(#""card")"#) {
+                payload["previews"] = store.cardPreviewsJSON()
+            }
             loadedVersion = store.documentVersion; loadedMode = store.mode
             webView.callAsyncJavaScript("window.notes.load(payload)", arguments: ["payload": payload], in: nil, in: .page) { [weak store] result in
                 if case let .failure(error) = result { store?.error = "The editor could not load: \(error.localizedDescription)" }
@@ -60,15 +62,22 @@ import NotesCore
                 imageFile: nil,
                 fetchedAt: Date()
             )
-            try library.savePreview(preview, for: url, imageData: fetched.imageData, type: fetched.type)
-            applyCardPreview(url: url, preview: library.preview(for: url) ?? preview)
+            do {
+                try library.savePreview(preview, for: url, imageData: fetched.imageData, type: fetched.type)
+                applyCardPreview(url: url, preview: library.preview(for: url) ?? preview)
+            } catch {
+                applyCardPreview(url: url, preview: preview, imageData: fetched.imageData, type: fetched.type)
+            }
         } catch {
             return
         }
     }
-    private func applyCardPreview(url: URL, preview: LinkPreview) {
+    private func applyCardPreview(url: URL, preview: LinkPreview, imageData: Data? = nil, type: String? = nil) {
         guard let store, let webView else { return }
         var payload = store.cardPreviewJSON(for: url, preview: preview)
+        if payload["imageSrc"] == nil, let imageData, let type {
+            payload["imageSrc"] = "data:\(type);base64," + imageData.base64EncodedString()
+        }
         payload["url"] = url.absoluteString
         webView.callAsyncJavaScript("window.notes.applyCardPreview(payload)", arguments: ["payload": payload], in: nil, in: .page, completionHandler: nil)
     }

@@ -205,6 +205,7 @@ enum EditorMode: String, CaseIterable { case live, reading, source
 
     func cardPreviewsJSON() -> [String: [String: String]] {
         guard let library else { return [:] }
+        guard !library.previewIndex.isEmpty else { return [:] }
         return library.previewIndex.reduce(into: [:]) { result, item in
             guard let url = URL(string: item.key), url.scheme?.lowercased() == "https" else { return }
             result[item.key] = cardPreviewJSON(for: url, preview: item.value)
