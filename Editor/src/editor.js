@@ -11,9 +11,48 @@ const $ = id => document.getElementById(id);
 const send = (type, payload = {}) => window.webkit?.messageHandlers?.notes?.postMessage({ type, ...payload });
 let documentID = '', currentMarkdown = '', frontmatter = '', mode = 'live', loading = false;
 let editor, slashRange = null, slashIndex = 0, slashMatches = [], linkRange = null;
+let applyingPreview = false, cardPreviews = new Map();
+let linkDialogPreviewRequested = false;
 const webURL = value => { try { const u = new URL(value); return ['https:', 'http:'].includes(u.protocol) ? u.href : null; } catch { return null; } };
 const openURL = value => { const url = webURL(value); if (url) send('openLink', { url }); };
 const escapeLabel = text => text.replace(/([\\\[\]])/g, '\\$1').replace(/\n/g, ' ');
+const previewURLKey = value => {
+  try {
+    const url = new URL(value);
+    url.hash = '';
+    return url.href;
+  } catch {
+    return value;
+  }
+};
+const previewForURL = value => cardPreviews.get(previewURLKey(value));
+const hostLabel = value => {
+  try {
+    const url = new URL(value);
+    return url.hostname.replace(/^www\./, '') + (url.pathname !== '/' ? url.pathname : '');
+  } catch {
+    return value;
+  }
+};
+const generatedTitleLabel = value => {
+  try {
+    return new URL(value).hostname.replace(/^www\./, '');
+  } catch {
+    return value;
+  }
+};
+const hasCustomCardTitle = (title, url) => {
+  const label = (title || '').trim();
+  return Boolean(label) && ![url, previewURLKey(url), generatedTitleLabel(url)].includes(label);
+};
+const previewDomain = value => {
+  try {
+    const url = new URL(value);
+    return `${url.protocol}//${url.hostname.replace(/^www\./, '')}`;
+  } catch {
+    return value;
+  }
+};
 
 const Callout = Node.create({
   name: 'callout', group: 'block', content: 'block+', defining: true,
@@ -91,8 +130,8 @@ const Callout = Node.create({
 
 const RichLink = Node.create({
   name: 'richLink', group: 'block', atom: true, selectable: true, draggable: true,
-  addAttributes() { return { url: { default: '' }, title: { default: '' } }; },
-  parseHTML() { return [{ tag: 'div[data-rich-link]', getAttrs: el => ({ url: el.dataset.url, title: el.dataset.title }) }]; },
+  addAttributes() { return { url: { default: '' }, title: { default: '' }, description: { default: '' }, imageSrc: { default: '' } }; },
+  parseHTML() { return [{ tag: 'div[data-rich-link]', getAttrs: el => ({ url: el.dataset.url, title: el.dataset.title, description: el.dataset.description || '', imageSrc: el.dataset.imageSrc || '' }) }]; },
   renderHTML({ node }) { return ['div', { 'data-rich-link': '', 'data-url': node.attrs.url, 'data-title': node.attrs.title }, node.attrs.title]; },
   markdownTokenizer: {
     name: 'richLink', level: 'block', start: src => src.search(/^\[/m),
@@ -106,15 +145,37 @@ const RichLink = Node.create({
   renderMarkdown: node => `[${escapeLabel(node.attrs.title)}](<${node.attrs.url.replace(/>/g, '%3E')}> "card")`,
   addNodeView() {
     return ({ node, editor: ed, getPos }) => {
-      const dom = document.createElement('div'); dom.className = 'rich-card'; dom.tabIndex = 0; dom.role = 'button';
-      dom.setAttribute('aria-label', `${node.attrs.title}. Click to select, click again to open.`);
-      const icon = document.createElement('span'); icon.className = 'card-icon'; icon.textContent = '↗';
-      const copy = document.createElement('span'); copy.className = 'card-copy';
-      const title = document.createElement('span'); title.className = 'card-title'; title.textContent = node.attrs.title || node.attrs.url;
-      const domain = document.createElement('span'); domain.className = 'card-domain';
-      try { const url = new URL(node.attrs.url); domain.textContent = url.hostname.replace(/^www\./, '') + (url.pathname !== '/' ? url.pathname : ''); } catch { domain.textContent = node.attrs.url; }
-      const arrow = document.createElement('span'); arrow.className = 'card-arrow'; arrow.textContent = '↗';
-      copy.append(title, domain); dom.append(icon, copy, arrow);
+      const dom = document.createElement('div'); dom.tabIndex = 0; dom.role = 'button';
+      const render = updated => {
+        node = updated;
+        const preview = previewForURL(updated.attrs.url);
+        const description = updated.attrs.description || preview?.description || '';
+        const imageSrc = updated.attrs.imageSrc || preview?.imageSrc || '';
+        const titleText = preview?.title && (preview.preferTitle || !hasCustomCardTitle(updated.attrs.title, updated.attrs.url)) ? preview.title : updated.attrs.title || preview?.title || updated.attrs.url;
+        const hasPreview = Boolean(description || imageSrc);
+        dom.className = `rich-card${hasPreview ? ' has-preview' : ''}${dom.classList.contains('selected') ? ' selected' : ''}`;
+        dom.setAttribute('aria-label', `${titleText}. Click to select, click again to open.`);
+        const icon = document.createElement('span'); icon.className = 'card-icon'; icon.textContent = '↗';
+        const copy = document.createElement('span'); copy.className = 'card-copy';
+        const title = document.createElement('span'); title.className = 'card-title'; title.textContent = titleText;
+        const domain = document.createElement('span'); domain.className = 'card-domain'; domain.textContent = hasPreview ? previewDomain(updated.attrs.url) : hostLabel(updated.attrs.url);
+        copy.append(title);
+        if (description) {
+          const summary = document.createElement('span'); summary.className = 'card-description'; summary.textContent = description;
+          copy.append(summary);
+        }
+        copy.append(domain);
+        const arrow = document.createElement('span'); arrow.className = 'card-arrow'; arrow.textContent = '↗';
+        const children = hasPreview ? [copy] : [icon, copy, arrow];
+        if (imageSrc) {
+          const image = document.createElement('img');
+          image.src = imageSrc;
+          image.alt = '';
+          children.push(image);
+        }
+        dom.replaceChildren(...children);
+      };
+      render(node);
       dom.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); });
       dom.addEventListener('click', e => {
         e.preventDefault(); e.stopPropagation();
@@ -126,7 +187,19 @@ const RichLink = Node.create({
         if ((e.key === 'Backspace' || e.key === 'Delete') && mode !== 'reading') { e.preventDefault(); ed.commands.deleteSelection(); ed.commands.focus(); }
         if (e.key === 'Escape') { const pos = getPos(); ed.commands.setTextSelection(Math.min(pos + node.nodeSize + 1, ed.state.doc.content.size)); ed.commands.focus(); }
       });
-      return { dom, stopEvent: () => true, selectNode: () => { dom.classList.add('selected'); dom.setAttribute('aria-pressed', 'true'); }, deselectNode: () => { dom.classList.remove('selected'); dom.setAttribute('aria-pressed', 'false'); } };
+      return {
+        dom,
+        stopEvent: () => true,
+        update: updated => {
+          if (updated.type !== node.type) return false;
+          const selected = dom.classList.contains('selected');
+          render(updated);
+          if (selected) dom.classList.add('selected');
+          return true;
+        },
+        selectNode: () => { dom.classList.add('selected'); dom.setAttribute('aria-pressed', 'true'); },
+        deselectNode: () => { dom.classList.remove('selected'); dom.setAttribute('aria-pressed', 'false'); }
+      };
     };
   }
 });
@@ -190,7 +263,7 @@ function makeEditor(markdown) {
         return false;
       }
     },
-    onUpdate() { if (!loading) { currentMarkdown = frontmatter + instance.getMarkdown(); notifyChange(); updateSlash(); } },
+    onUpdate() { if (!loading && !applyingPreview) { currentMarkdown = frontmatter + instance.getMarkdown(); notifyChange(); updateSlash(); } },
     onSelectionUpdate() { if (!loading) { updateSlash(); updateBubble(); } }
   });
   return instance;
@@ -222,10 +295,30 @@ $('properties-dialog').addEventListener('close', () => {
 
 function notifyChange() { $('source').value = currentMarkdown; send('change', { id: documentID, markdown: currentMarkdown }); reportStats(); }
 function reportStats() { const body = splitFrontmatter(currentMarkdown)[1]; send('stats', { id: documentID, words: body.trim().split(/\s+/).filter(Boolean).length }); }
+function applyCardPreview(payload, options = {}) {
+  const key = previewURLKey(payload.url);
+  cardPreviews.set(key, { title: payload.title || '', description: payload.description || '', imageSrc: payload.imageSrc || '', preferTitle: Boolean(options.preferTitle) });
+  if (!editor) return;
+  const tr = editor.state.tr;
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name !== 'richLink' || previewURLKey(node.attrs.url) !== key) return;
+    tr.setNodeMarkup(pos, undefined, { ...node.attrs, description: payload.description || '', imageSrc: payload.imageSrc || '' });
+  });
+  if (!tr.docChanged) return;
+  tr.setMeta('addToHistory', false);
+  applyingPreview = true;
+  try {
+    editor.view.dispatch(tr);
+  } finally {
+    applyingPreview = false;
+  }
+}
 function loadDocument(payload) {
   loading = true; documentID = payload.id; currentMarkdown = payload.markdown; mode = payload.mode || 'live';
+  cardPreviews = new Map();
   [frontmatter] = splitFrontmatter(currentMarkdown);
   editor?.destroy(); $('editor').replaceChildren(); editor = makeEditor(splitFrontmatter(currentMarkdown)[1]);
+  Object.entries(payload.previews || {}).forEach(([url, preview]) => applyCardPreview({ url, ...preview }, { preferTitle: true }));
   applyMode(); hideSlash(); hideBubble(); window.scrollTo(0, 0); loading = false; reportStats();
 }
 function applyMode() {
@@ -293,17 +386,27 @@ function chooseSlash(command) { if (slashRange) editor.chain().focus().deleteRan
 function showLink(url = '') {
   if (mode !== 'live') return;
   linkRange = { from: editor.state.selection.from, to: editor.state.selection.to };
+  linkDialogPreviewRequested = false;
   $('link-url').value = url || editor.getAttributes('link').href || '';
   $('link-title').value = editor.state.doc.textBetween(linkRange.from, linkRange.to, ' ');
   $('link-dialog').showModal(); $('link-url').focus();
 }
+document.querySelector('#link-dialog button[value=card]').addEventListener('click', () => {
+  const url = webURL($('link-url').value.trim());
+  if (!url) return;
+  linkDialogPreviewRequested = true;
+  send('fetchCardPreview', { url });
+});
 $('link-dialog').addEventListener('close', () => {
   const result = $('link-dialog').returnValue;
   if (result === 'cancel' || !['link', 'card'].includes(result)) { editor.commands.focus(); return; }
   const url = webURL($('link-url').value.trim()); if (!url) return;
   const title = $('link-title').value.trim() || new URL(url).hostname.replace(/^www\./, '');
   const chain = editor.chain().focus().setTextSelection(linkRange);
-  if (result === 'card') chain.insertContent([{ type: 'richLink', attrs: { url, title } }, { type: 'paragraph' }]).run();
+  if (result === 'card') {
+    chain.insertContent([{ type: 'richLink', attrs: { url, title } }, { type: 'paragraph' }]).run();
+    if (!linkDialogPreviewRequested) send('fetchCardPreview', { url });
+  }
   else {
     chain.insertContent({ type: 'text', text: title, marks: [{ type: 'link', attrs: { href: url } }] }).run();
     editor.view.dispatch(editor.state.tr.removeStoredMark(editor.schema.marks.link));
@@ -381,7 +484,7 @@ window.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's' && !e.shiftKey) { e.preventDefault(); send('save'); }
 });
 
-window.notes = { load: loadDocument, setMode, command: execute, getMarkdown: () => currentMarkdown, getJSON: () => editor.getJSON(), focus: () => mode === 'source' ? $('source').focus() : editor.commands.focus(), properties: showProperties };
+window.notes = { load: loadDocument, setMode, command: execute, applyCardPreview, getMarkdown: () => currentMarkdown, getJSON: () => editor.getJSON(), focus: () => mode === 'source' ? $('source').focus() : editor.commands.focus(), properties: showProperties };
 send('ready');
 // A browser harness loads only explicit fixtures; production content arrives from the native host.
 loadDocument({ id: '', markdown: '', mode: 'live' });

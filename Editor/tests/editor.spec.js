@@ -13,6 +13,7 @@ async function load(page, markdown, mode = 'live') {
 }
 const markdown = page => page.evaluate(() => window.notes.getMarkdown());
 const json = page => page.evaluate(() => window.notes.getJSON());
+const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const fixture = `---
 status: Draft
 tags: [ideas, writing]
@@ -49,6 +50,81 @@ This is **bold**, *italic*, ~~struck~~, and \`code\`.
 let note = "hello"
 \`\`\`
 `;
+
+test('cached previews hydrate without fetching', async ({ page }) => {
+  await page.goto(editorURL);
+  await page.waitForFunction(() => window.notes);
+  await page.evaluate(({ pixel }) => {
+    window.messages = [];
+    window.webkit = { messageHandlers: { notes: { postMessage: message => window.messages.push(message) } } };
+    window.notes.load({
+      id: 'test.md',
+      markdown: '[mymind](<https://mymind.com> "card")\n',
+      mode: 'live',
+      previews: {
+        'https://mymind.com/': {
+          title: 'mymind is the extension for your mind.',
+          description: 'A private place to save your most precious notes.',
+          imageSrc: pixel
+        }
+      }
+    });
+  }, { pixel });
+  await expect(page.locator('.rich-card')).toHaveClass(/has-preview/);
+  await expect(page.locator('.card-title')).toHaveText('mymind is the extension for your mind.');
+  await expect(page.locator('.card-description')).toContainText('A private place');
+  await expect(page.locator('.rich-card img')).toHaveAttribute('src', pixel);
+  expect(await page.evaluate(() => window.messages.filter(m => m.type === 'fetchCardPreview'))).toHaveLength(0);
+  expect(await markdown(page)).toContain('[mymind](<https://mymind.com> "card")');
+});
+
+test('applyCardPreview upgrades a compact card and failed images stay compact', async ({ page }) => {
+  await load(page, '[Example](<https://example.com/path> "card")\n');
+  await expect(page.locator('.rich-card')).not.toHaveClass(/has-preview/);
+  await page.evaluate(() => window.notes.applyCardPreview({
+    url: 'https://example.com/path',
+    title: 'Example',
+    description: 'Hello there from the page.',
+    imageSrc: ''
+  }));
+  await expect(page.locator('.card-description')).toHaveText('Hello there from the page.');
+  await expect(page.locator('.rich-card img')).toHaveCount(0);
+  expect(await markdown(page)).toContain('[Example](<https://example.com/path> "card")');
+  expect(await page.evaluate(() => window.messages.filter(m => m.type === 'change'))).toHaveLength(0);
+});
+
+test('applyCardPreview replaces generated titles but keeps custom titles', async ({ page }) => {
+  await load(page, '[example.com](<https://example.com/path> "card")\n\n[My Example](<https://custom.example/path> "card")\n');
+  await page.evaluate(() => {
+    window.notes.applyCardPreview({
+      url: 'https://example.com/path',
+      title: 'Example page',
+      description: 'Generated title can upgrade.',
+      imageSrc: ''
+    });
+    window.notes.applyCardPreview({
+      url: 'https://custom.example/path',
+      title: 'Custom page',
+      description: 'Custom title stays.',
+      imageSrc: ''
+    });
+  });
+  await expect(page.locator('.rich-card').first().locator('.card-title')).toHaveText('Example page');
+  await expect(page.locator('.rich-card').nth(1).locator('.card-title')).toHaveText('My Example');
+  expect(await markdown(page)).toContain('[example.com](<https://example.com/path> "card")');
+  expect(await markdown(page)).toContain('[My Example](<https://custom.example/path> "card")');
+});
+
+test('inserting a rich card requests a native preview', async ({ page }) => {
+  await load(page, '');
+  await page.evaluate(() => window.notes.command('link'));
+  await page.locator('#link-url').fill('https://example.com/path');
+  await page.locator('#link-title').fill('Example');
+  await page.getByRole('button', { name: 'Rich card', exact: true }).click();
+  expect(await page.evaluate(() => window.messages.filter(m => m.type === 'fetchCardPreview'))).toEqual([
+    { type: 'fetchCardPreview', url: 'https://example.com/path' }
+  ]);
+});
 
 test('renders supported Markdown and does not rewrite on mode switches', async ({ page }) => {
   await load(page, fixture);
