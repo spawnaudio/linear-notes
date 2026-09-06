@@ -2,6 +2,25 @@
 
 This document records feature-set changes and additions after the original product outline. The original outline remains in [Linear Notes - v1.0 Ideation](<Linear Notes - v1.0 Ideation.md>).
 
+## 2026-09-07 — Editor chrome, folds, and card previews
+
+### Added / Changed / Fixed
+
+- Moved formatting chrome out of the persistent editor bar and into the selection popover, keeping the page primary while writing.
+- Added callout heading folds that round-trip Markdown fold markers in Live Preview and Reading mode.
+- Added insert-time local preview caching for HTTPS rich cards, with preview metadata stored in `.linear-notes` instead of the Markdown file.
+- Added the privacy sentence to the link dialog so local preview lookup is explained before choosing a rich card.
+
+### Validation
+
+- Covered by the expanded editor interaction and Swift test suites recorded in `docs/VALIDATION.md`.
+
+### Limits
+
+- Preview data can become stale because rich cards do not refresh after insertion.
+- Some sites may block the app's preview user agent or omit useful metadata.
+- There is no manual preview refresh in this MVP.
+
 ## 0.1.0 — Initial MVP
 
 ### Added

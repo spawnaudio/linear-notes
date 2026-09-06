@@ -513,6 +513,16 @@ Use this section for decisions that affect the product’s design language.
 
 ### Current decisions
 
+#### 2026-09-07 — Page-primary chrome and local previews
+
+**Decision:** The editor keeps page-primary chrome by removing the persistent formatting bar in favour of contextual selection controls. Rich-card previews are fetched locally at insert time with explicit privacy copy, cached outside Markdown, and limited to HTTPS. Callout folds work in Live Preview and Reading mode, `data:` image URLs can render from cached previews, and the interface should adapt Linear-inspired hierarchy without adopting Linear marketing tokens.
+
+**Reason:** Writing should keep visual weight on the document while still exposing formatting at the moment of selection. Preview lookup must stay understandable in a local-first app, and cached metadata should never make note files less portable. Folded callouts are document state users can see in both writing and reading contexts, while the visual language should remain Linear Notes' own native product system rather than a copy of Linear's brand surface.
+
+**Affected surfaces:** Editor chrome, selection popover, slash commands, rich-card insertion, preview cache, link dialog privacy copy, callout rendering, Live Preview, Reading mode, and design tokens.
+
+**Open follow-up:** Decide whether stale previews need manual refresh, whether blocked preview lookups should expose a retry affordance, and how far image preview support should extend beyond cached HTTPS metadata.
+
 #### 2026-09-06 — Calm local-first document workspace
 
 **Decision:** The page is primary, Markdown remains portable, and the interface uses restrained hierarchy instead of dashboard density.

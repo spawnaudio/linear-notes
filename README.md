@@ -11,10 +11,10 @@ Requires macOS 15 or later. This is a locally signed MVP, not a notarized distri
 ## Included in v0.1
 
 - Live rich-text Markdown editing, read-only Reading mode, and plain-text Source mode.
-- Linear's core formatting shortcuts, headings 1–4, slash commands, and a selection toolbar.
+- Linear's core formatting shortcuts, headings 1–4, slash commands, and a contextual selection popover.
 - Bullets, numbered lists, checklists, tables, code blocks, links, horizontal rules, and undo/redo.
-- GitHub/Obsidian-style callouts and separate italic quote blocks.
-- Pasted URL chooser: Markdown link or rich card. A card selects on the first click and opens on the second. Enter opens a selected card; Delete removes it in editing mode.
+- GitHub/Obsidian-style callouts with heading folds, plus separate italic quote blocks.
+- Pasted URL chooser: Markdown link or rich card. Rich-card previews fetch on insert, use HTTPS only, and cache locally in `.linear-notes`. A card selects on the first click and opens on the second. Enter opens a selected card; Delete removes it in editing mode.
 - YAML frontmatter displayed as compact property pills; click a pill to edit the YAML. Nested structures remain in the file, with top-level fields shown as pills.
 - Native sidebar with folders, filename search, drag sorting, pins within each parent folder, and a separate bookmark section.
 - Animated sidebar collapse, system light/dark appearance, native file dialogs, and Finder/Trash actions.
@@ -72,9 +72,9 @@ Browser tests use the local Google Chrome installation on macOS. `npm run build`
 ## MVP boundaries
 
 - The window, navigation, menus, file access, and lifecycle are native SwiftUI/AppKit. The embedded rich editor uses bundled Tiptap/ProseMirror in WKWebView. There is no Electron runtime or hosted editor.
-- Rich cards show a supplied title and URL. They do not fetch website metadata, thumbnails, or embedded media.
+- Rich cards fetch a title, summary, and small image preview only when inserted through the local app, then cache that preview data beside sidebar metadata in `.linear-notes`. They do not refresh stale previews, fetch from non-HTTPS URLs, or load web content from the editor webview.
 - Images retain their Markdown references and display placeholders. Image loading/attachments, math, diagrams, wikilinks, footnotes, and full Obsidian extensions are outside this first version. Arbitrary HTML is preserved as inert source blocks.
-- Callout fold markers are retained but callouts are always expanded. Properties use a simple YAML source editor; this is not a full typed property system.
+- Callouts can fold in Live Preview and Reading mode while keeping their Markdown fold markers portable. Properties use a simple YAML source editor; this is not a full typed property system.
 - No cloud sync, collaboration, version history, or iOS app yet. The Foundation-only `NotesCore` and platform-independent editor are separated for future iOS reuse.
 - External changes are checked every two seconds. Simultaneous writes by editors that ignore file coordination still require care; test with a small notebook first. Very large libraries/files and full accessibility coverage have not been validated.
 

@@ -1,10 +1,10 @@
 # Editor chrome, callout folds, and rich-card previews
 
 Date: 2026-09-07
-Status: draft for review
+Status: approved
 Scope: Live Preview editor in the macOS app (`Editor/` + native host glue)
 
-This spec covers three changes that stay inside the v1.0 product rules: local Markdown as source of truth, organisation and app cache in `.linear-notes/`, Linear Documents + Markdown Preview chrome, no account or server.
+This spec covers three changes that stay inside the v1.0 product rules: local Markdown as source of truth, organisation and app cache in `.linear-notes/`, Linear Documents + Markdown Preview chrome, no account or server. Visual and behaviour language follows [Linear Notes - Design Documentation](../../Linear%20Notes%20-%20Design%20Documentation.md): the page is primary, popovers are quiet, cards are document objects, accent is for focus not fill, hairlines beat dashboard shadows. Linear OAuth/sync is out of scope.
 
 ## Goals
 
@@ -22,6 +22,9 @@ This spec covers three changes that stay inside the v1.0 product rules: local Ma
 - Typed property schemas, wikilinks, math, diagrams
 - A “refresh preview” control (follow-up, not this slice)
 - Replacing native app menus or existing keyboard shortcuts
+- Removing the native Live / Reading / Source control (that stays in the Mac window)
+- Linear workspace OAuth, document port, or two-way sync
+- Copying Linear marketing tokens (near-black `#010102` canvas, dark-only)
 
 ## Invariants
 
@@ -30,6 +33,7 @@ This spec covers three changes that stay inside the v1.0 product rules: local Ma
 - HTTPS links only for cards and fetches. `javascript:` and other non-http(s) URLs still cannot become cards.
 - Two-click cards stay: first click selects, second click opens. Enter opens a selected card; Delete removes it in Live mode.
 - If a fetch fails, the card falls back to the current compact layout (icon, title, host). No broken image hole.
+- Native mode switching remains in the Mac window. The in-document format strip is what goes away.
 
 ---
 
@@ -91,21 +95,40 @@ Store preview data under the notes folder, not in the file:
 
 Missing cache ⇒ compact card. Corrupt or absent image file ⇒ compact card (or text-only preview card without the image column). Deleting `.linear-notes/` resets previews without deleting notes.
 
+### Privacy
+
+The link dialog states, near the Rich card action:
+
+> Linear Notes looks up a title, summary, and image for this page on your Mac. Nothing is sent to a Linear Notes server.
+
+Lookup happens only at insert, only for that HTTPS URL, using the Mac’s network. Cached bytes stay in `.linear-notes/`. There is no Linear Notes backend.
+
+### Card states
+
+| State | Appearance | Behaviour |
+| --- | --- | --- |
+| Default | Compact, or preview layout if cache has description and/or image | First click selects |
+| Selected | Hairline accent ring (no lavender fill, no drop shadow) | Second click or Enter opens |
+| Unavailable | Compact card; never an empty image box | Same as default |
+| Deleted | Node removed from the document | Delete in Live mode |
+
 ### When to fetch
 
-Native Swift (`URLSession`) fetches once when the user inserts a rich card: paste-URL chooser → Rich card, or link dialog → Rich card. No fetch on document load. No fetch from the WKWebView page (`connect-src` stays `'none'`).
+Native Swift (`URLSession`) fetches once when the user inserts a rich card: paste-URL chooser → Rich card, or link dialog → Rich card. No fetch on document load (cached previews still apply). No fetch from the WKWebView page (`connect-src` stays `'none'`).
 
 Timeout: 5 seconds for HTML, 5 seconds for the image. Parse `og:title`, `og:description` or `twitter:description`, `og:image` or `twitter:image`. Resolve relative image URLs against the page URL. Download the image only if the response is an image and at most 2 MB. Never follow a redirect to a different origin for HTML; an image CDN on another host is allowed when `og:image` is https.
 
-After success, native writes the cache and pushes `{ url, title, description, imageSrc }` into the editor for that card node. `imageSrc` is a `file:` URL (or the host’s existing local-resource mapping) pointing at `.linear-notes/previews/<hash>`, never the remote image URL.
+After success, native writes the cache and pushes `{ url, title, description, imageSrc }` into the editor for that card node. `imageSrc` is a `data:` URL built from the cached image bytes. The web view’s file access remains the bundled editor folder; it must not load remote `https` images. On document load, native includes cached previews in the `load` payload so cards hydrate without a network round-trip.
+
+Access preview files via the notebook `.linear-notes` directory the same way as `sidebar.json`. Do not use `NoteLibrary.url(for:)`, which rejects dotted path components.
 
 ### Layout
 
-**With preview:** full-width rounded row, hairline `--line` border, `--bg` fill. Left: title (one line, ellipsis), description (two lines, ellipsis), URL (muted, `https://hostname` with `www.` stripped). Right: square (card-height) image, `object-fit: cover`, flush to top/right/bottom, sharing the card radius. Padding on the text side only. Light and dark use existing tokens. No drop shadow.
+**With preview:** full-width rounded row, hairline `--line` border, `--bg` / card surface fill (not accent). Left: title (one line, ellipsis), description (two lines, ellipsis), URL (muted, `https://hostname` with `www.` stripped). Right: square (card-height) image, `object-fit: cover`, flush to top/right/bottom, sharing the card radius. Padding on the text side only. Light and dark use existing tokens. No drop shadow.
 
 **Without preview:** keep the current compact card (leading icon, title, host+path, trailing arrow).
 
-Selection ring stays the existing accent outline. The image is not a separate hit target.
+Selected: accent ring only (replace the current `box-shadow` glow). The image is not a separate hit target. Description without an image still uses the preview text layout, without a blank image column.
 
 ### Tests
 
@@ -123,7 +146,11 @@ Selection ring stays the existing accent outline. The image is not a separate hi
 
 Delete the sticky `#formatbar`. Live mode chrome is document + property pills only. Reclaim the 43px top offset so the page sits higher.
 
-Keep all current formatting shortcuts and native menu commands.
+Keep all current formatting shortcuts and native menu commands. Native Live / Reading / Source switching is unchanged.
+
+### Popover grammar
+
+`#bubble` and `#slash` use a popover surface, hairline `--line` border, radius 8–12, and short appear-from-caret motion. No drop shadow. Keyboard navigation stays. `prefers-reduced-motion` disables slide. Accent is for the selected row / active mark, not the panel fill.
 
 ### Selection popover
 
@@ -154,6 +181,8 @@ Click outside closes without executing.
 - `/call` filters; Enter inserts a callout.
 - `/` then Space leaves `/ ` in the paragraph and hides the menu.
 - Escape leaves `/call` visible and hides the menu.
+- Link dialog includes the privacy sentence near Rich card.
+- `load` with a `previews` map shows description/image without sending `fetchCardPreview`.
 
 ---
 
@@ -162,21 +191,22 @@ Click outside closes without executing.
 ```
 Native (Swift)                         Editor (WKWebView)
 ─────────────────                      ──────────────────
-Insert card / paste URL
-  → HTTPS GET page + image
-  → write .linear-notes/link-previews.json
-  → write .linear-notes/previews/<hash>
-  → message: cardPreview { id, url, ... }
-                                       → update richLink node view
+load({ markdown, previews })
+  previews from .linear-notes/         → hydrate card node views
 
-Callout fold / slash / bubble
-  stay in Editor/ (Tiptap). Markdown
-  round-trip already includes fold.
+insert rich card
+  ← fetchCardPreview { url }
+  HTTPS GET page + image
+  write link-previews.json + previews/<hash>
+  → notes.applyCardPreview({ url, title, description, imageSrc })
+                                       imageSrc is a data: URL
+
+Callout fold / slash / bubble stay in Editor/. Fold is already in Markdown.
 ```
 
 `NotesCore` may own preview cache read/write next to `sidebar.json` so the files stay a library concern. The web editor does not perform network I/O.
 
-Content Security Policy: keep `connect-src 'none'`. Extend `img-src` only as needed for local preview files (existing `data:` / `file:`, plus a notebook preview scheme if required).
+Content Security Policy: keep `connect-src 'none'`. Keep `img-src data: file:`; card images are `data:` URLs supplied by native code, never remote URLs.
 
 ## Error handling
 

@@ -4,8 +4,8 @@ Tested on the development Mac with Xcode-beta and the installed Google Chrome. R
 
 ## Automated checks
 
-- **8 storage tests:** Unicode and exact file contents; rejection of external-edit overwrite; folder renames preserving descendant pins/bookmarks/selection; manual pin ordering; cross-folder moves; cycle rejection; duplicate/path traversal rejection; symbolic-link filtering; metadata independence.
-- **14 browser interaction tests:** Markdown rendering and unchanged mode switches; edited Markdown round-trips; two-click cards; read-only behaviour; slash commands and leaving callouts; source editing; property editing; normal links and cards; Markdown typing and isolated undo histories; inert HTML preservation; light/dark and narrow layouts; empty/CRLF frontmatter; pasted URL choice; checkbox persistence and unsafe-card rejection.
+- **28 browser interaction tests** from `cd Editor && npm test`: cached rich-card previews; insert-time native preview requests; no persistent format bar; selection popover formatting; slash Space/Escape behaviour; callout folding in Live Preview and Reading mode; Markdown rendering and unchanged mode switches; edited Markdown round-trips; two-click cards; read-only behaviour; source editing; property editing; normal links and cards; Markdown typing and isolated undo histories; inert HTML preservation; light/dark and narrow layouts; empty/CRLF frontmatter; pasted URL choice; checkbox persistence and unsafe-card rejection.
+- **14 Swift XCTest tests** from `bash scripts/test.sh`: 8 storage/library tests for Unicode and exact file contents, external-edit conflict protection, folder rename metadata, pin ordering, cross-folder moves, cycle rejection, duplicate/path traversal rejection, symbolic-link filtering, and metadata independence; 6 link-preview tests for HTTPS normalization, Open Graph parsing, same-origin image rules, cache round-trip, missing previews, and preview index output.
 - Release build and local code-signature verification performed by `scripts/build.sh`.
 
 ## Native walkthrough
