@@ -93,6 +93,43 @@ test('applyCardPreview upgrades a compact card and failed images stay compact', 
   expect(await page.evaluate(() => window.messages.filter(m => m.type === 'change'))).toHaveLength(0);
 });
 
+test('applyCardPreview matches path trailing slash variants', async ({ page }) => {
+  await load(page, '[Example](<https://example.com/path> "card")\n');
+  await page.evaluate(() => window.notes.applyCardPreview({
+    url: 'https://example.com/path/',
+    title: 'Example',
+    description: 'Trailing slash preview.',
+    imageSrc: ''
+  }));
+  await expect(page.locator('.rich-card')).toHaveClass(/has-preview/);
+  await expect(page.locator('.card-description')).toHaveText('Trailing slash preview.');
+});
+
+test('remote preview images are ignored', async ({ page }) => {
+  await load(page, '[Example](<https://example.com/path> "card")\n');
+  await page.evaluate(() => window.notes.applyCardPreview({
+    url: 'https://example.com/path',
+    title: 'Example',
+    description: 'Description still creates a preview layout.',
+    imageSrc: 'https://example.com/image.png'
+  }));
+  await expect(page.locator('.rich-card')).toHaveClass(/has-preview/);
+  await expect(page.locator('.card-description')).toHaveText('Description still creates a preview layout.');
+  await expect(page.locator('.rich-card img')).toHaveCount(0);
+});
+
+test('title-only previews refresh generated card titles', async ({ page }) => {
+  await load(page, '[example.com](<https://example.com/path> "card")\n');
+  await page.evaluate(() => window.notes.applyCardPreview({
+    url: 'https://example.com/path',
+    title: 'Example page',
+    description: '',
+    imageSrc: ''
+  }));
+  await expect(page.locator('.card-title')).toHaveText('Example page');
+  await expect(page.locator('.rich-card')).not.toHaveClass(/has-preview/);
+});
+
 test('applyCardPreview replaces generated titles but keeps custom titles', async ({ page }) => {
   await load(page, '[example.com](<https://example.com/path> "card")\n\n[My Example](<https://custom.example/path> "card")\n');
   await page.evaluate(() => {

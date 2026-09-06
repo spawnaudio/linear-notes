@@ -20,12 +20,14 @@ const previewURLKey = value => {
   try {
     const url = new URL(value);
     url.hash = '';
+    if (url.pathname !== '/') url.pathname = url.pathname.replace(/\/+$/, '') || '/';
     return url.href;
   } catch {
     return value;
   }
 };
 const previewForURL = value => cardPreviews.get(previewURLKey(value));
+const previewImageSrc = value => typeof value === 'string' && value.trim().startsWith('data:') ? value.trim() : '';
 const hostLabel = value => {
   try {
     const url = new URL(value);
@@ -148,9 +150,12 @@ const RichLink = Node.create({
       const dom = document.createElement('div'); dom.tabIndex = 0; dom.role = 'button';
       const render = updated => {
         node = updated;
+        dom.dataset.previewKey = previewURLKey(updated.attrs.url);
+        dom.dataset.url = updated.attrs.url;
+        dom.dataset.title = updated.attrs.title;
         const preview = previewForURL(updated.attrs.url);
         const description = updated.attrs.description || preview?.description || '';
-        const imageSrc = updated.attrs.imageSrc || preview?.imageSrc || '';
+        const imageSrc = previewImageSrc(updated.attrs.imageSrc || preview?.imageSrc || '');
         const titleText = preview?.title && (preview.preferTitle || !hasCustomCardTitle(updated.attrs.title, updated.attrs.url)) ? preview.title : updated.attrs.title || preview?.title || updated.attrs.url;
         const hasPreview = Boolean(description || imageSrc);
         dom.className = `rich-card${hasPreview ? ' has-preview' : ''}${dom.classList.contains('selected') ? ' selected' : ''}`;
@@ -295,16 +300,30 @@ $('properties-dialog').addEventListener('close', () => {
 
 function notifyChange() { $('source').value = currentMarkdown; send('change', { id: documentID, markdown: currentMarkdown }); reportStats(); }
 function reportStats() { const body = splitFrontmatter(currentMarkdown)[1]; send('stats', { id: documentID, words: body.trim().split(/\s+/).filter(Boolean).length }); }
+function refreshTitleOnlyCardPreviews(key) {
+  document.querySelectorAll(`.rich-card[data-preview-key="${CSS.escape(key)}"]`).forEach(card => {
+    const preview = previewForURL(card.dataset.url || '');
+    if (!preview?.title) return;
+    const titleText = preview.preferTitle || !hasCustomCardTitle(card.dataset.title || '', card.dataset.url || '') ? preview.title : card.dataset.title || preview.title;
+    card.querySelector('.card-title')?.replaceChildren(document.createTextNode(titleText));
+    card.setAttribute('aria-label', `${titleText}. Click to select, click again to open.`);
+  });
+}
 function applyCardPreview(payload, options = {}) {
   const key = previewURLKey(payload.url);
-  cardPreviews.set(key, { title: payload.title || '', description: payload.description || '', imageSrc: payload.imageSrc || '', preferTitle: Boolean(options.preferTitle) });
+  const description = payload.description || '';
+  const imageSrc = previewImageSrc(payload.imageSrc || '');
+  cardPreviews.set(key, { title: payload.title || '', description, imageSrc, preferTitle: Boolean(options.preferTitle) });
   if (!editor) return;
   const tr = editor.state.tr;
   editor.state.doc.descendants((node, pos) => {
     if (node.type.name !== 'richLink' || previewURLKey(node.attrs.url) !== key) return;
-    tr.setNodeMarkup(pos, undefined, { ...node.attrs, description: payload.description || '', imageSrc: payload.imageSrc || '' });
+    tr.setNodeMarkup(pos, undefined, { ...node.attrs, description, imageSrc });
   });
-  if (!tr.docChanged) return;
+  if (!tr.docChanged) {
+    refreshTitleOnlyCardPreviews(key);
+    return;
+  }
   tr.setMeta('addToHistory', false);
   applyingPreview = true;
   try {
@@ -312,6 +331,7 @@ function applyCardPreview(payload, options = {}) {
   } finally {
     applyingPreview = false;
   }
+  refreshTitleOnlyCardPreviews(key);
 }
 function loadDocument(payload) {
   loading = true; documentID = payload.id; currentMarkdown = payload.markdown; mode = payload.mode || 'live';
