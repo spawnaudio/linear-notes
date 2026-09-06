@@ -81,3 +81,5 @@ Browser tests use the local Google Chrome installation on macOS. `npm run build`
 See [validation notes](docs/VALIDATION.md) and [third-party notices](docs/THIRD_PARTY_NOTICES.md).
 
 Product history is kept in [Linear Notes - v1.0 Ideation](<docs/Linear Notes - v1.0 Ideation.md>) and [Linear Notes MVP - Changelog](<docs/Linear Notes MVP - Changelog.md>). The ideation document preserves the original plan; the changelog records later feature-set updates.
+
+The working visual and interaction principles are documented in [Linear Notes - Design Documentation](<docs/Linear Notes - Design Documentation.md>). The attached Linear reference files are kept under [docs/resources](<docs/resources>).
