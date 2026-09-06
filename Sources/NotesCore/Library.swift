@@ -52,6 +52,7 @@ public enum LibraryError: LocalizedError {
 public final class NoteLibrary {
     public let root: URL
     public var sidebar: SidebarState
+    private var linkPreviews: [String: LinkPreview]
     private let fm = FileManager.default
 
     public init(root: URL) throws {
@@ -60,6 +61,12 @@ public final class NoteLibrary {
         if FileManager.default.fileExists(atPath: metadata.path) {
             sidebar = try JSONDecoder().decode(SidebarState.self, from: Data(contentsOf: metadata))
         } else { sidebar = SidebarState() }
+        let previewMetadata = self.root.appendingPathComponent(".linear-notes/link-previews.json")
+        if FileManager.default.fileExists(atPath: previewMetadata.path),
+           let data = try? Data(contentsOf: previewMetadata) {
+            let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+            linkPreviews = (try? decoder.decode(LinkPreviewStore.self, from: data).items) ?? [:]
+        } else { linkPreviews = [:] }
     }
 
     public func url(for path: String) throws -> URL {
@@ -120,14 +127,42 @@ public final class NoteLibrary {
     }
 
     public func saveSidebar() throws {
-        let directory = root.appendingPathComponent(".linear-notes", isDirectory: true)
-        if fm.fileExists(atPath: directory.path) {
-            let values = try directory.resourceValues(forKeys: [.isSymbolicLinkKey])
-            guard values.isSymbolicLink != true else { throw LibraryError.invalidPath }
-        }
-        try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+        let directory = try metadataDirectory()
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(sidebar).write(to: directory.appendingPathComponent("sidebar.json"), options: .atomic)
+    }
+
+    public func preview(for url: URL) -> LinkPreview? {
+        guard let key = previewKey(for: url) else { return nil }
+        return linkPreviews[key]
+    }
+
+    public func savePreview(_ preview: LinkPreview, for url: URL, imageData: Data?, type: String?) throws {
+        guard let key = previewKey(for: url) else { throw LibraryError.invalidPath }
+        let directory = try metadataDirectory()
+        var stored = preview
+        if let imageData {
+            let imageFile = LinkPreviewing.fileName(for: url, type: type)
+            let imageURL = directory.appendingPathComponent(imageFile)
+            let imageDirectory = imageURL.deletingLastPathComponent()
+            if fm.fileExists(atPath: imageDirectory.path) {
+                let values = try imageDirectory.resourceValues(forKeys: [.isSymbolicLinkKey])
+                guard values.isSymbolicLink != true else { throw LibraryError.invalidPath }
+            }
+            try fm.createDirectory(at: imageDirectory, withIntermediateDirectories: true)
+            try imageData.write(to: imageURL, options: .atomic)
+            stored.imageFile = imageFile
+        }
+        linkPreviews[key] = stored
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601; encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(LinkPreviewStore(version: 1, items: linkPreviews)).write(to: directory.appendingPathComponent("link-previews.json"), options: .atomic)
+    }
+
+    public func previewImageData(for url: URL) -> Data? {
+        guard let imageFile = preview(for: url)?.imageFile,
+              isSafePreviewImagePath(imageFile) else { return nil }
+        let imageURL = root.appendingPathComponent(".linear-notes", isDirectory: true).appendingPathComponent(imageFile)
+        return try? Data(contentsOf: imageURL)
     }
 
     public func create(name: String, parent: String = "", folder: Bool = false, content: String = "") throws -> String {
@@ -162,5 +197,24 @@ public final class NoteLibrary {
         sidebar.order[parent] = siblings
         try saveSidebar()
         return target
+    }
+
+    private func metadataDirectory() throws -> URL {
+        let directory = root.appendingPathComponent(".linear-notes", isDirectory: true)
+        if fm.fileExists(atPath: directory.path) {
+            let values = try directory.resourceValues(forKeys: [.isSymbolicLinkKey])
+            guard values.isSymbolicLink != true else { throw LibraryError.invalidPath }
+        }
+        try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
+    private func previewKey(for url: URL) -> String? {
+        LinkPreviewing.normalizeURL(url.absoluteString)?.absoluteString
+    }
+
+    private func isSafePreviewImagePath(_ path: String) -> Bool {
+        guard path.hasPrefix("previews/"), !path.hasPrefix("/") else { return false }
+        return !path.split(separator: "/").contains { $0 == ".." || $0.hasPrefix(".") }
     }
 }
