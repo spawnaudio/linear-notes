@@ -1,4 +1,5 @@
 .build/
+.worktrees/
 dist/
 Editor/node_modules/
 Editor/test-results/
