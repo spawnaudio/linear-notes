@@ -1,9 +1,11 @@
 import SwiftUI
 import WebKit
+import NotesCore
 
 @MainActor final class EditorBridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     weak var store: NotebookStore?
     weak var webView: WKWebView?
+    let fetcher = LinkPreviewFetcher()
     var ready = false
     var loadedVersion = -1
     var loadedMode: EditorMode?
@@ -17,13 +19,16 @@ import WebKit
         case "stats": if data["id"] as? String == store.selected { store.words = data["words"] as? Int ?? 0 }
         case "openLink":
             if let raw = data["url"] as? String, let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? "") { NSWorkspace.shared.open(url) }
+        case "fetchCardPreview":
+            if let raw = data["url"] as? String { Task { [weak self] in await self?.fetchCardPreview(raw) } }
         default: break
         }
     }
     func update() {
         guard ready, let store, let webView else { return }
         if loadedVersion != store.documentVersion {
-            let payload: [String: Any] = ["id": store.selected ?? "", "markdown": store.markdown, "mode": store.mode.rawValue]
+            var payload: [String: Any] = ["id": store.selected ?? "", "markdown": store.markdown, "mode": store.mode.rawValue]
+            payload["previews"] = store.cardPreviewsJSON()
             loadedVersion = store.documentVersion; loadedMode = store.mode
             webView.callAsyncJavaScript("window.notes.load(payload)", arguments: ["payload": payload], in: nil, in: .page) { [weak store] result in
                 if case let .failure(error) = result { store?.error = "The editor could not load: \(error.localizedDescription)" }
@@ -35,6 +40,37 @@ import WebKit
     }
     func command(_ name: String) {
         webView?.callAsyncJavaScript("window.notes.command(command)", arguments: ["command": name], in: nil, in: .page, completionHandler: nil)
+    }
+    func fetchCardPreview(_ raw: String) async {
+        guard let store,
+              let library = store.library,
+              let url = LinkPreviewing.normalizeURL(raw),
+              url.scheme?.lowercased() == "https" else { return }
+        if let preview = library.preview(for: url) {
+            applyCardPreview(url: url, preview: preview)
+            return
+        }
+        do {
+            let fetched = try await fetcher.fetch(url: url)
+            guard !fetched.title.isEmpty || !fetched.description.isEmpty || fetched.imageData != nil else { return }
+            let preview = LinkPreview(
+                title: fetched.title,
+                description: fetched.description,
+                imageURL: fetched.imageURL?.absoluteString,
+                imageFile: nil,
+                fetchedAt: Date()
+            )
+            try library.savePreview(preview, for: url, imageData: fetched.imageData, type: fetched.type)
+            applyCardPreview(url: url, preview: library.preview(for: url) ?? preview)
+        } catch {
+            return
+        }
+    }
+    private func applyCardPreview(url: URL, preview: LinkPreview) {
+        guard let store, let webView else { return }
+        var payload = store.cardPreviewJSON(for: url, preview: preview)
+        payload["url"] = url.absoluteString
+        webView.callAsyncJavaScript("window.notes.applyCardPreview(payload)", arguments: ["payload": payload], in: nil, in: .page, completionHandler: nil)
     }
     func flush(_ completion: @escaping @MainActor (Bool) -> Void) {
         guard ready, let webView, let store, let id = store.selected else { completion(true); return }

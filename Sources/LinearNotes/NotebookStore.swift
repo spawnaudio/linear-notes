@@ -202,4 +202,36 @@ enum EditorMode: String, CaseIterable { case live, reading, source
         } catch { self.error = error.localizedDescription }
     }
     func reveal(_ path: String? = nil) { if let url = try? library?.url(for: path ?? selected ?? "") { NSWorkspace.shared.activateFileViewerSelecting([url]) } }
+
+    func cardPreviewsJSON() -> [String: [String: String]] {
+        guard let library else { return [:] }
+        return library.previewIndex.reduce(into: [:]) { result, item in
+            guard let url = URL(string: item.key), url.scheme?.lowercased() == "https" else { return }
+            result[item.key] = cardPreviewJSON(for: url, preview: item.value)
+        }
+    }
+
+    func cardPreviewJSON(for url: URL, preview: LinkPreview) -> [String: String] {
+        var payload = ["title": preview.title, "description": preview.description]
+        if let imageSrc = previewImageDataURL(for: url, preview: preview) {
+            payload["imageSrc"] = imageSrc
+        }
+        return payload
+    }
+
+    private func previewImageDataURL(for url: URL, preview: LinkPreview) -> String? {
+        guard let data = library?.previewImageData(for: url),
+              let mime = previewImageMimeType(preview.imageFile) else { return nil }
+        return "data:\(mime);base64," + data.base64EncodedString()
+    }
+
+    private func previewImageMimeType(_ imageFile: String?) -> String? {
+        switch imageFile?.split(separator: ".").last?.lowercased() {
+        case "jpg", "jpeg": "image/jpeg"
+        case "png": "image/png"
+        case "webp": "image/webp"
+        case "gif": "image/gif"
+        default: nil
+        }
+    }
 }

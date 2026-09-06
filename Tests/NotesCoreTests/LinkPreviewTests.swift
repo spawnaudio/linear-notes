@@ -47,4 +47,15 @@ final class LinkPreviewTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         XCTAssertNil(try NoteLibrary(root: root).preview(for: URL(string: "https://example.com")!))
     }
+
+    func testPreviewIndexExposesNormalizedURLs() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let library = try NoteLibrary(root: root)
+        let url = URL(string: "HTTPS://Example.com/a#frag")!
+        let preview = LinkPreview(title: "Example", description: "Hello", imageURL: nil, imageFile: nil, fetchedAt: Date(timeIntervalSince1970: 1))
+        try library.savePreview(preview, for: url, imageData: nil, type: nil)
+        XCTAssertEqual(library.previewIndex["https://example.com/a"]?.title, "Example")
+    }
 }

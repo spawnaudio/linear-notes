@@ -137,6 +137,10 @@ public final class NoteLibrary {
         return linkPreviews[key]
     }
 
+    public var previewIndex: [String: LinkPreview] {
+        linkPreviews
+    }
+
     public func savePreview(_ preview: LinkPreview, for url: URL, imageData: Data?, type: String?) throws {
         guard let key = previewKey(for: url) else { throw LibraryError.invalidPath }
         let directory = try metadataDirectory()
