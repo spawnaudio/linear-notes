@@ -117,6 +117,33 @@ test('slash menu inserts an editable callout and supports keyboard choice', asyn
   await expect(page.locator('.tiptap > p').last()).toHaveText('Outside');
 });
 
+test('callout fold markers round-trip and the heading toggles collapse', async ({ page }) => {
+  await load(page, '> [!TIP]-\n> Hidden body\n');
+  await expect(page.locator('.callout-content')).toBeHidden();
+  await page.locator('.callout-heading').click();
+  await expect(page.locator('.callout-content')).toBeVisible();
+  expect(await markdown(page)).toContain('> [!TIP]+');
+  await page.locator('.callout-heading').click();
+  expect(await markdown(page)).toContain('> [!TIP]-');
+});
+
+test('new slash callouts stay unmarked until folded', async ({ page }) => {
+  await load(page, '');
+  await page.locator('.tiptap').click();
+  await page.keyboard.type('/callout');
+  await page.keyboard.press('Enter');
+  expect(await markdown(page)).toMatch(/> \[!NOTE\]\n/);
+  await page.locator('.callout-heading').click();
+  expect(await markdown(page)).toContain('> [!NOTE]-');
+});
+
+test('reading mode can fold a callout without editing the body', async ({ page }) => {
+  await load(page, '> [!NOTE]\n> Keep\n', 'reading');
+  await page.locator('.callout-heading').click();
+  expect(await markdown(page)).toContain('> [!NOTE]-');
+  expect(await markdown(page)).toContain('> Keep');
+});
+
 test('source edits are exact and live preview reflects them', async ({ page }) => {
   await load(page, fixture, 'source');
   const source = '# Changed\n\n> [!WARNING]\n> Be careful.\n';

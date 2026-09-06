@@ -20,8 +20,8 @@ const Callout = Node.create({
   addAttributes() { return { kind: { default: 'note' }, title: { default: '' }, fold: { default: '' } }; },
   parseHTML() { return [{ tag: 'aside[data-kind]' }]; },
   renderHTML({ node }) {
-    return ['aside', { class: 'callout', 'data-kind': node.attrs.kind },
-      ['div', { class: 'callout-heading', contenteditable: 'false' }, node.attrs.title || node.attrs.kind.charAt(0).toUpperCase() + node.attrs.kind.slice(1)],
+    return ['aside', mergeAttributes({ class: 'callout', 'data-kind': node.attrs.kind }, node.attrs.fold ? { 'data-fold': node.attrs.fold } : {}),
+      ['button', { class: 'callout-heading', contenteditable: 'false', type: 'button' }, node.attrs.title || node.attrs.kind.charAt(0).toUpperCase() + node.attrs.kind.slice(1)],
       ['div', { class: 'callout-content' }, 0]];
   },
   markdownTokenizer: {
@@ -44,6 +44,48 @@ const Callout = Node.create({
       if (empty && $from.parent.type.name === 'paragraph' && !$from.parent.textContent && this.editor.isActive('callout')) return this.editor.commands.lift('callout');
       return false;
     }};
+  },
+  addNodeView() {
+    return ({ node, editor: ed, getPos }) => {
+      const dom = document.createElement('aside');
+      dom.className = 'callout';
+      const heading = document.createElement('button');
+      heading.type = 'button';
+      heading.className = 'callout-heading';
+      heading.contentEditable = 'false';
+      const content = document.createElement('div');
+      content.className = 'callout-content';
+      const updateView = updated => {
+        node = updated;
+        dom.dataset.kind = updated.attrs.kind;
+        if (updated.attrs.fold) dom.dataset.fold = updated.attrs.fold;
+        else delete dom.dataset.fold;
+        heading.textContent = updated.attrs.title || updated.attrs.kind.charAt(0).toUpperCase() + updated.attrs.kind.slice(1);
+        heading.setAttribute('aria-expanded', String(updated.attrs.fold !== '-'));
+      };
+      heading.addEventListener('mousedown', e => e.preventDefault());
+      heading.addEventListener('click', e => {
+        e.preventDefault(); e.stopPropagation();
+        const pos = getPos();
+        if (typeof pos !== 'number') return;
+        const current = ed.state.doc.nodeAt(pos);
+        if (!current) return;
+        const fold = current.attrs.fold === '-' ? '+' : '-';
+        ed.chain().command(({ tr }) => { tr.setNodeMarkup(pos, undefined, { ...current.attrs, fold }); return true; }).run();
+      });
+      updateView(node);
+      dom.append(heading, content);
+      return {
+        dom,
+        contentDOM: content,
+        stopEvent: event => heading.contains(event.target),
+        update: updated => {
+          if (updated.type !== node.type) return false;
+          updateView(updated);
+          return true;
+        }
+      };
+    };
   }
 });
 
