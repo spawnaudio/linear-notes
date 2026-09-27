@@ -1,5 +1,7 @@
 # Linear Notes
 
+Linear Project: [Linear Notes App](https://linear.app/spawn-audio/project/linear-notes-app-f39bbd5383e7/overview).
+
 A minimal macOS notes app inspired by [Linear Documents](https://linear.app/docs/documents) and [Markdown Preview](https://markdownpreview.app). Your notes are ordinary local Markdown files. No account or server.
 
 ## Try it
