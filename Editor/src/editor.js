@@ -6,23 +6,44 @@ import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import { TableKit } from '@tiptap/extension-table';
 import Image from '@tiptap/extension-image';
+import Paragraph from '@tiptap/extension-paragraph';
 
 const $ = id => document.getElementById(id);
 const send = (type, payload = {}) => window.webkit?.messageHandlers?.notes?.postMessage({ type, ...payload });
-let documentID = '', currentMarkdown = '', frontmatter = '', mode = 'live', loading = false;
+let documentID = '', currentMarkdown = '', frontmatter = '', mode = 'live', loading = false, assetBase = '';
 let editor, slashRange = null, slashIndex = 0, slashMatches = [], linkRange = null;
+let calloutPosition = null, calloutColour = '', imageAltPosition = null, uploadRange = null, imageRequest = 0, activeHeading = -1;
+const imageRequests = new Map();
 const webURL = value => { try { const u = new URL(value); return ['https:', 'http:'].includes(u.protocol) ? u.href : null; } catch { return null; } };
 const openURL = value => { const url = webURL(value); if (url) send('openLink', { url }); };
 const escapeLabel = text => text.replace(/([\\\[\]])/g, '\\$1').replace(/\n/g, ' ');
 
 const Callout = Node.create({
   name: 'callout', group: 'block', content: 'block+', defining: true,
-  addAttributes() { return { kind: { default: 'note' }, title: { default: '' }, fold: { default: '' } }; },
+  addAttributes() { return { kind: { default: 'note' }, title: { default: '' }, fold: { default: '' }, colour: { default: '' }, icon: { default: '' } }; },
   parseHTML() { return [{ tag: 'aside[data-kind]' }]; },
   renderHTML({ node }) {
     return ['aside', { class: 'callout', 'data-kind': node.attrs.kind },
-      ['div', { class: 'callout-heading', contenteditable: 'false' }, node.attrs.title || node.attrs.kind.charAt(0).toUpperCase() + node.attrs.kind.slice(1)],
+      ['div', { class: 'callout-heading', contenteditable: 'false' }, node.attrs.title],
       ['div', { class: 'callout-content' }, 0]];
+  },
+  addNodeView() {
+    return ({ node, getPos }) => {
+      const dom = document.createElement('aside'); dom.className = 'callout';
+      const icon = document.createElement('button'); icon.className = 'callout-icon'; icon.type = 'button'; icon.contentEditable = 'false';
+      icon.setAttribute('aria-label', 'Change callout style'); icon.onclick = () => showCallout(getPos(), icon);
+      const title = document.createElement('div'); title.className = 'callout-heading'; title.contentEditable = 'false';
+      const contentDOM = document.createElement('div'); contentDOM.className = 'callout-content'; dom.append(icon, title, contentDOM);
+      const draw = next => {
+        dom.dataset.kind = next.attrs.kind;
+        const colour = /^#[\da-f]{6}$/i.test(next.attrs.colour) ? next.attrs.colour : '';
+        dom.style.setProperty('--custom-callout', colour || 'var(--callout-color)');
+        icon.textContent = next.attrs.icon || ({ tip: '💡', warning: '⚠', caution: '⚠', important: '★' })[next.attrs.kind] || 'ⓘ';
+        icon.disabled = mode !== 'live'; title.textContent = next.attrs.title; title.hidden = !next.attrs.title;
+      };
+      draw(node);
+      return { dom, contentDOM, update: next => { if (next.type.name !== 'callout') return false; draw(next); return true; }, stopEvent: event => icon.contains(event.target) };
+    };
   },
   markdownTokenizer: {
     name: 'callout', level: 'block', start: src => src.search(/^>\s*\[!/m),
@@ -30,13 +51,23 @@ const Callout = Node.create({
       const match = /^>\s*\[!([\w-]+)\]([+-]?)[ \t]*([^\n]*)(?:\n|$)((?:>[^\n]*(?:\n|$))*)/.exec(src);
       if (!match) return;
       const body = match[4].replace(/^> ?/gm, '');
-      return { type: 'callout', raw: match[0], kind: match[1].toLowerCase(), fold: match[2], title: match[3], tokens: lexer.blockTokens(body) };
+      let title = match[3], metadata = {};
+      const custom = /\s*<!--linear-notes-callout:([^>]+)-->\s*$/.exec(title);
+      if (custom) {
+        try {
+          const decoded = JSON.parse(decodeURIComponent(custom[1]));
+          if (decoded && typeof decoded === 'object' && !Array.isArray(decoded)) { metadata = decoded; title = title.slice(0, custom.index); }
+        } catch { }
+      }
+      return { type: 'callout', raw: match[0], kind: match[1].toLowerCase(), fold: match[2], title,
+        colour: /^#[\da-f]{6}$/i.test(metadata.colour) ? metadata.colour : '', icon: cleanIcon(metadata.icon), tokens: lexer.blockTokens(body) };
     }
   },
-  parseMarkdown(token, h) { return { type: 'callout', attrs: { kind: token.kind, title: token.title, fold: token.fold }, content: h.parseChildren(token.tokens).length ? h.parseChildren(token.tokens) : [{ type: 'paragraph' }] }; },
+  parseMarkdown(token, h) { return { type: 'callout', attrs: { kind: token.kind, title: token.title, fold: token.fold, colour: token.colour, icon: token.icon }, content: h.parseChildren(token.tokens).length ? h.parseChildren(token.tokens) : [{ type: 'paragraph' }] }; },
   renderMarkdown(node, h) {
     const title = node.attrs.title ? ` ${node.attrs.title}` : '';
-    return `> [!${node.attrs.kind.toUpperCase()}]${node.attrs.fold || ''}${title}\n` + h.renderChildren(node.content, '\n\n').trimEnd().split('\n').map(line => `> ${line}`).join('\n');
+    const custom = node.attrs.colour || node.attrs.icon ? ` <!--linear-notes-callout:${encodeURIComponent(JSON.stringify({ colour: node.attrs.colour, icon: node.attrs.icon }))}-->` : '';
+    return `> [!${node.attrs.kind.toUpperCase()}]${node.attrs.fold || ''}${title}${custom}\n` + h.renderChildren(node.content, '\n\n').trimEnd().split('\n').map(line => `> ${line}`).join('\n');
   },
   addKeyboardShortcuts() {
     return { Enter: () => {
@@ -53,7 +84,11 @@ const RichLink = Node.create({
   parseHTML() { return [{ tag: 'div[data-rich-link]', getAttrs: el => ({ url: el.dataset.url, title: el.dataset.title }) }]; },
   renderHTML({ node }) { return ['div', { 'data-rich-link': '', 'data-url': node.attrs.url, 'data-title': node.attrs.title }, node.attrs.title]; },
   markdownTokenizer: {
-    name: 'richLink', level: 'block', start: src => src.search(/^\[/m),
+    name: 'richLink', level: 'block', start: src => {
+      const match = /^\[(?:\\.|[^\]\\])*\]\([^\n]+ "card"\)[ \t]*(?:\n|$)/m.exec(src);
+      // Marked calls start after the first character: do not split an image's leading !.
+      return match && match.index > 0 ? match.index : -1;
+    },
     tokenize(src) {
       const m = /^\[((?:\\.|[^\]\\])*)\]\((?:<([^>\n]+)>|([^\s]+)) "card"\)[ \t]*(?:\n|$)/.exec(src);
       if (!m || !webURL(m[2] || m[3])) return;
@@ -100,13 +135,114 @@ const RawHTML = Node.create({
   renderMarkdown: node => node.attrs.source
 });
 
+function imageURL(src) {
+  if (typeof src !== 'string') return null;
+  if (/^data:image\/(png|jpeg|gif|webp);base64,[a-z\d+/=\r\n]+$/i.test(src) && src.length <= 28 * 1024 * 1024) return src;
+  const remote = webURL(src);
+  if (remote && remote.startsWith('https:')) return assetBase && new URL(remote).hostname === 'uploads.linear.app' ? `${assetBase}//image?note=${encodeURIComponent(documentID)}&src=${encodeURIComponent(remote)}` : remote;
+  if (!src || src.startsWith('/') || /[:\\\x00-\x1f]/.test(src)) return null;
+  return assetBase ? `${assetBase}//image?note=${encodeURIComponent(documentID)}&src=${encodeURIComponent(src)}` : src;
+}
 const SafeImage = Image.extend({
-  addNodeView() { return ({ node }) => {
-    const dom = document.createElement('div'); dom.className = 'image-placeholder';
-    dom.textContent = `▧  ${node.attrs.alt || 'Image'} · ${node.attrs.src}`;
-    dom.title = 'Image reference preserved. Inline image loading is planned for a later version.';
-    return { dom };
+  renderMarkdown(node) {
+    const src = (node.attrs.src || '').replace(/</g, '%3C').replace(/>/g, '%3E').replace(/[\r\n]/g, '');
+    const title = node.attrs.title ? ` "${String(node.attrs.title).replace(/[\\"]/g, '\\$&').replace(/[\r\n]/g, ' ')}"` : '';
+    return `![${escapeLabel(node.attrs.alt || '')}](<${src}>${title})`;
+  },
+  addNodeView() { return ({ node, editor: ed, getPos }) => {
+    const dom = document.createElement('figure'); dom.className = 'note-image';
+    const image = document.createElement('img'); const fallback = document.createElement('div'); fallback.className = 'image-placeholder';
+    const tools = document.createElement('div'); tools.className = 'image-tools'; tools.contentEditable = 'false';
+    let current = node;
+    const button = (label, action) => { const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.onclick = action; tools.append(button); };
+    button('Replace', () => { const pos = getPos(); uploadRange = { from: pos, to: pos + current.nodeSize, replace: true }; $('image-file').click(); });
+    button('Alt text', () => { imageAltPosition = getPos(); $('image-alt').value = current.attrs.alt || ''; $('image-dialog').showModal(); });
+    button('Remove', () => { const pos = getPos(); ed.chain().focus().deleteRange({ from: pos, to: pos + current.nodeSize }).run(); });
+    dom.append(image, fallback, tools);
+    image.onclick = () => { if (mode === 'live') ed.commands.setNodeSelection(getPos()); };
+    const draw = next => {
+      current = next; image.alt = next.attrs.alt || 'Image'; image.title = next.attrs.title || '';
+      const src = imageURL(next.attrs.src); fallback.textContent = `Image unavailable · ${next.attrs.alt || next.attrs.src}`;
+      fallback.hidden = Boolean(src); image.hidden = !src;
+      if (src) { image.onload = () => { fallback.hidden = true; image.hidden = false; }; image.onerror = () => { fallback.hidden = false; image.hidden = true; }; if (image.getAttribute('src') !== src) image.src = src; }
+      else image.removeAttribute('src');
+    };
+    draw(node);
+    return { dom, update: next => { if (next.type.name !== 'image') return false; draw(next); return true; }, stopEvent: event => tools.contains(event.target),
+      selectNode: () => dom.classList.add('selected'), deselectNode: () => dom.classList.remove('selected') };
   }; }
+});
+
+const ImageParagraph = Paragraph.extend({
+  parseMarkdown(token, helpers) {
+    if (!token.tokens?.some(t => t.type === 'image')) return this.parent(token, helpers);
+    const blocks = []; let inline = [];
+    for (const node of helpers.parseInline(token.tokens)) {
+      if (node.type === 'image') { if (inline.length) blocks.push(helpers.createNode('paragraph', undefined, inline)); inline = []; blocks.push(node); }
+      else inline.push(node);
+    }
+    if (inline.length) blocks.push(helpers.createNode('paragraph', undefined, inline));
+    return blocks;
+  }
+});
+
+function uploadImage(file, range = editor.state.selection) {
+  if (mode !== 'live' || !file) return;
+  if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(file.type) || file.size > 20 * 1024 * 1024) {
+    $('image-error').textContent = 'Choose a PNG, JPEG, GIF, or WebP image under 20 MB.'; $('image-error').hidden = false; return;
+  }
+  const request = String(++imageRequest), instance = editor;
+  imageRequests.set(request, { id: documentID, editor: instance, from: range.from, to: range.to, replace: range.replace === true, alt: file.name.replace(/\.[^.]+$/, '') });
+  const reader = new FileReader();
+  reader.onload = () => {
+    const pending = imageRequests.get(request);
+    if (!pending || instance !== editor || mode !== 'live') { imageRequests.delete(request); return; }
+    send('attachment', { id: pending.id, request, data: String(reader.result).split(',')[1] });
+  };
+  reader.onerror = () => { imageRequests.delete(request); $('image-error').textContent = 'This image could not be read.'; $('image-error').hidden = false; };
+  reader.readAsDataURL(file);
+}
+function receiveAttachment(payload) {
+  const pending = imageRequests.get(payload.request); imageRequests.delete(payload.request);
+  if (!pending || pending.editor !== editor || pending.id !== documentID || payload.id !== documentID || mode !== 'live') return;
+  if (payload.error) { $('image-error').textContent = payload.error; $('image-error').hidden = false; return; }
+  if (!imageURL(payload.src) || (pending.replace && editor.state.doc.nodeAt(pending.from)?.type.name !== 'image')) return;
+  const chain = editor.chain().focus();
+  if (pending.replace) {
+    const node = editor.state.doc.nodeAt(pending.from);
+    chain.setNodeSelection(pending.from).updateAttributes('image', { ...node.attrs, src: payload.src }).run();
+  } else chain.setTextSelection({ from: pending.from, to: Math.max(pending.from, pending.to) }).setImage({ src: payload.src, alt: pending.alt }).run();
+  $('image-error').hidden = true;
+}
+$('image-file').addEventListener('change', () => { uploadImage($('image-file').files[0], uploadRange || editor.state.selection); uploadRange = null; $('image-file').value = ''; });
+$('image-dialog').addEventListener('close', () => {
+  if ($('image-dialog').returnValue === 'save' && mode === 'live' && editor.state.doc.nodeAt(imageAltPosition)?.type.name === 'image') {
+    editor.chain().focus().setNodeSelection(imageAltPosition).updateAttributes('image', { alt: $('image-alt').value.trim() }).run();
+  }
+});
+function cleanIcon(value) {
+  if (typeof value !== 'string') return '';
+  return [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(value.replace(/[\x00-\x1f]/g, '').trim())][0]?.segment || '';
+}
+function showCallout(position, anchor) {
+  if (mode !== 'live') return;
+  const node = editor.state.doc.nodeAt(position); if (node?.type.name !== 'callout') return;
+  calloutPosition = position; calloutColour = node.attrs.colour;
+  $('callout-colour').value = node.attrs.colour || '#8794f5'; $('callout-icon').value = node.attrs.icon;
+  const dialog = $('callout-dialog'); dialog.showModal();
+  const rect = anchor.getBoundingClientRect();
+  dialog.style.left = `${Math.max(12, Math.min(rect.left, innerWidth - dialog.offsetWidth - 12))}px`;
+  dialog.style.top = `${Math.max(12, Math.min(rect.bottom + 8, innerHeight - dialog.offsetHeight - 12))}px`;
+}
+$('callout-colour').addEventListener('input', () => { calloutColour = $('callout-colour').value; });
+document.querySelectorAll('[data-callout-colour]').forEach(button => button.onclick = () => { calloutColour = button.dataset.calloutColour; $('callout-colour').value = calloutColour || '#8794f5'; });
+document.querySelectorAll('[data-callout-icon]').forEach(button => button.onclick = () => { $('callout-icon').value = button.dataset.calloutIcon; });
+$('callout-dialog').addEventListener('close', () => {
+  const node = editor.state.doc.nodeAt(calloutPosition);
+  if ($('callout-dialog').returnValue === 'save' && mode === 'live' && node?.type.name === 'callout') {
+    editor.view.dispatch(editor.state.tr.setNodeMarkup(calloutPosition, undefined, { ...node.attrs, colour: calloutColour, icon: cleanIcon($('callout-icon').value) }));
+  }
+  editor.commands.focus(); calloutPosition = null;
 });
 
 const LinearKeys = Extension.create({
@@ -128,15 +264,24 @@ const LinearKeys = Extension.create({
 function makeEditor(markdown) {
   const instance = new Editor({
     element: $('editor'),
-    extensions: [StarterKit.configure({ heading: { levels: [1, 2, 3, 4, 5, 6] }, link: { openOnClick: false, autolink: true }, trailingNode: false }), Markdown, Placeholder.configure({ placeholder: 'Start writing, or type / for commands…' }), TaskList, TaskItem.configure({ nested: true, HTMLAttributes: { 'data-type': 'taskItem' } }), TableKit, SafeImage, Callout, RichLink, RawHTML, LinearKeys],
+    extensions: [StarterKit.configure({ paragraph: false, heading: { levels: [1, 2, 3, 4, 5, 6] }, link: { openOnClick: false, autolink: true }, trailingNode: false }), ImageParagraph, Markdown, Placeholder.configure({ placeholder: 'Start writing, or type / for commands…' }), TaskList, TaskItem.configure({ nested: true, HTMLAttributes: { 'data-type': 'taskItem' } }), TableKit, SafeImage.configure({ allowBase64: true }), Callout, RichLink, RawHTML, LinearKeys],
     content: markdown, contentType: 'markdown', editable: mode !== 'reading',
     editorProps: {
       attributes: { 'aria-label': mode === 'reading' ? 'Read document' : 'Edit document', spellcheck: 'true' },
       handlePaste(view, event) {
         if (mode !== 'live') return false;
+        const image = Array.from(event.clipboardData?.files || []).find(file => file.type.startsWith('image/'));
+        if (image) { event.preventDefault(); uploadImage(image, view.state.selection); return true; }
         const text = event.clipboardData?.getData('text/plain')?.trim();
         if (webURL(text)) { event.preventDefault(); showLink(text); return true; }
         return false;
+      },
+      handleDrop(view, event, _slice, moved) {
+        if (mode !== 'live' || moved) return false;
+        const image = Array.from(event.dataTransfer?.files || []).find(file => file.type.startsWith('image/'));
+        if (!image) return false;
+        const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ?? view.state.selection.from;
+        event.preventDefault(); uploadImage(image, { from: pos, to: pos }); return true;
       },
       handleKeyDown(_view, event) {
         if (!$('slash').hidden) {
@@ -147,7 +292,15 @@ function makeEditor(markdown) {
         return false;
       }
     },
-    onUpdate() { if (!loading) { currentMarkdown = frontmatter + instance.getMarkdown(); notifyChange(); updateSlash(); } },
+    onUpdate() { if (!loading) { currentMarkdown = frontmatter + instance.getMarkdown(); notifyChange(); updateSlash(); reportOutline(); } },
+    onTransaction({ transaction }) {
+      for (const pending of imageRequests.values()) {
+        if (pending.editor !== instance) continue;
+        const mapped = transaction.mapping.mapResult(pending.from, 1);
+        pending.from = mapped.pos; pending.to = transaction.mapping.map(pending.to, -1);
+        if (pending.replace && mapped.deleted) pending.editor = null;
+      }
+    },
     onSelectionUpdate() { if (!loading) { updateSlash(); updateBubble(); } }
   });
   return instance;
@@ -191,9 +344,11 @@ function propertyRows() {
 function reportStats() { send('properties', { id: documentID, text: propertiesText(), rows: propertyRows() }); const body = splitFrontmatter(currentMarkdown)[1]; send('stats', { id: documentID, words: body.trim().split(/\s+/).filter(Boolean).length }); }
 function loadDocument(payload) {
   loading = true; documentID = payload.id; currentMarkdown = payload.markdown; mode = payload.mode || 'live';
+  assetBase = payload.assetBase || ''; imageRequests.clear(); activeHeading = -1;
+  for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close('cancel');
   [frontmatter] = splitFrontmatter(currentMarkdown);
   editor?.destroy(); $('editor').replaceChildren(); editor = makeEditor(splitFrontmatter(currentMarkdown)[1]);
-  applyMode(); hideSlash(); $('bubble').hidden = true; window.scrollTo(0, 0); loading = false; reportStats();
+  applyMode(); hideSlash(); $('bubble').hidden = true; window.scrollTo(0, 0); loading = false; reportStats(); reportOutline();
 }
 function applyMode() {
   document.body.dataset.mode = mode;
@@ -201,12 +356,13 @@ function applyMode() {
   $('properties').hidden = mode === 'source';
   $('source').value = currentMarkdown; resizeSource(); editor.setEditable(mode === 'live', false); drawProperties();
   document.querySelectorAll('input[type=checkbox]').forEach(input => input.disabled = mode === 'reading');
+  document.querySelectorAll('.callout-icon').forEach(button => button.disabled = mode !== 'live');
 }
 function setMode(next) {
   if (!['source', 'reading', 'live'].includes(next) || next === mode) return;
   loading = true;
   if (mode === 'source') { [frontmatter] = splitFrontmatter(currentMarkdown); editor.destroy(); $('editor').replaceChildren(); editor = makeEditor(splitFrontmatter(currentMarkdown)[1]); }
-  mode = next; applyMode(); hideSlash(); $('bubble').hidden = true; loading = false;
+  mode = next; applyMode(); hideSlash(); $('bubble').hidden = true; loading = false; reportOutline();
 }
 function resizeSource() { const field = $('source'); field.style.height = 'auto'; field.style.height = `${Math.max(520, field.scrollHeight)}px`; }
 $('source').addEventListener('input', () => { currentMarkdown = $('source').value; send('change', { id: documentID, markdown: currentMarkdown }); reportStats(); resizeSource(); });
@@ -226,6 +382,7 @@ const slashCommands = [
   { id: 'divider', icon: '—', name: 'Divider', desc: 'A quiet break between ideas' },
   { id: 'link', icon: '↗', name: 'Link or rich card', desc: 'A reference to come back to' },
   { id: 'table', icon: '▦', name: 'Table', desc: 'Organise a few details' },
+  { id: 'image', icon: '▧', name: 'Image', desc: 'Insert a local image' },
 ];
 function updateSlash() {
   if (mode !== 'live' || !editor) return hideSlash();
@@ -304,6 +461,7 @@ function execute(command) {
     case 'table': return chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
     case 'callout': case 'tip': case 'warning': return chain.wrapIn('callout', { kind: command === 'callout' ? 'note' : command }).run();
     case 'link': return showLink();
+    case 'image': uploadRange = { from: editor.state.selection.from, to: editor.state.selection.to }; $('image-file').click(); return;
     case 'undo': return editor.commands.undo();
     case 'redo': return editor.commands.redo();
   }
@@ -338,12 +496,31 @@ document.addEventListener('click', e => {
   if (!e.target.closest('#slash') && !e.target.closest('#bubble')) hideSlash();
 });
 window.addEventListener('resize', () => { $('bubble').hidden = true; hideSlash(); });
-window.addEventListener('scroll', () => { $('bubble').hidden = true; hideSlash(); }, { passive: true });
+const headingElements = () => mode === 'source' ? [] : Array.from(document.querySelectorAll('.tiptap h1,.tiptap h2,.tiptap h3,.tiptap h4,.tiptap h5,.tiptap h6'));
+function headingIndex(headings = headingElements()) {
+  if (headings.length && window.scrollY > 0 && window.scrollY + innerHeight >= document.documentElement.scrollHeight - 2) return headings.length - 1;
+  let active = headings.length ? 0 : -1;
+  headings.forEach((heading, index) => { if (heading.getBoundingClientRect().top <= 110) active = index; });
+  return active;
+}
+function reportOutline() {
+  const headings = headingElements(); activeHeading = headingIndex(headings);
+  send('outline', { id: documentID, headings: headings.map((heading, index) => ({ index, level: Number(heading.tagName[1]), text: heading.textContent })), active: activeHeading });
+}
+function jumpToHeading(index) {
+  const heading = headingElements()[index]; if (!heading) return;
+  heading.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+}
+window.addEventListener('scroll', () => {
+  $('bubble').hidden = true; hideSlash();
+  const next = headingIndex(); if (next !== activeHeading) { activeHeading = next; send('headingActive', { id: documentID, active: next }); }
+}, { passive: true });
 window.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's' && !e.shiftKey) { e.preventDefault(); send('save'); }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p' && !e.shiftKey) { e.preventDefault(); send('quickOpen'); }
 });
 
-window.notes = { load: loadDocument, setMode, command: execute, getMarkdown: () => currentMarkdown, getJSON: () => editor.getJSON(), focus: () => mode === 'source' ? $('source').focus() : editor.commands.focus(), properties: showProperties };
+window.notes = { load: loadDocument, setMode, command: execute, getMarkdown: () => currentMarkdown, getJSON: () => editor.getJSON(), focus: () => mode === 'source' ? $('source').focus() : editor.commands.focus(), properties: showProperties, attachment: receiveAttachment, jumpToHeading };
 send('ready');
 // A browser harness loads only explicit fixtures; production content arrives from the native host.
 loadDocument({ id: '', markdown: '', mode: 'live' });

@@ -17,6 +17,7 @@ import AppKit
                 Button("New Note…") { store.create() }.keyboardShortcut("n")
                 Button("New Folder…") { store.create(folder: true) }.keyboardShortcut("n", modifiers: [.command, .shift])
                 Divider(); Button("Open Notes Folder…", action: store.chooseFolder).keyboardShortcut("o")
+                Button("Import from Linear…") { store.linearImportVisible = true }.disabled(store.library == nil)
             }
             CommandGroup(replacing: .saveItem) { Button("Save") { store.bridge?.flush { _ in } }.keyboardShortcut("s") }
             CommandMenu("Format") {
@@ -34,9 +35,11 @@ import AppKit
                 Button("Checklist") { store.bridge?.command("task") }.keyboardShortcut("7", modifiers: [.command, .shift])
                 Button("Quote") { store.bridge?.command("quote") }
                 Button("Callout") { store.bridge?.command("callout") }
+                Button("Image…") { store.bridge?.command("image") }.disabled(store.mode != .live || store.selected == nil)
                 Button("Code Block") { store.bridge?.command("codeBlock") }.keyboardShortcut("\\", modifiers: [.command, .shift])
             }
             CommandGroup(after: .sidebar) {
+                Button("Find a Note…") { store.quickOpenVisible = true }.keyboardShortcut("p")
                 Button("Toggle Sidebar") { store.sidebarVisible.toggle() }.keyboardShortcut("\\")
                 Button("Toggle Details Sidebar") { store.inspectorVisible.toggle() }.keyboardShortcut("\\", modifiers: [.command, .option])
                 Divider()
@@ -47,7 +50,7 @@ import AppKit
             CommandGroup(replacing: .help) {
                 Button("Keyboard Shortcuts") {
                     let alert = NSAlert(); alert.messageText = "Make yourself at home."
-                    alert.informativeText = "⌘B  Bold     ⌘I  Italic     ⌘U  Underline\n⌘E  Inline code     ⌘K  Link or card\n⌘⇧S  Strikethrough\n⌘⇧7 / 8 / 9  Checklist / bullets / numbers\n⌘⌥1–4  Heading levels\n⌘⇧\\  Code block\n⌘N  New note     ⌘⇧N  New folder\n⌘O  Open notes folder     ⌘S  Save\n⌘\\  Toggle sidebar\n⌃⌘1 / 2 / 3  Live / reading / source\n\nType / at the start of a paragraph for blocks.\nDrag near a row’s edge to reorder. Drop in the middle of a folder to move inside it.\nRight-click any item to pin or bookmark it.\nRich cards: click to select, then click again to open."
+                    alert.informativeText = "⌘B  Bold     ⌘I  Italic     ⌘U  Underline\n⌘E  Inline code     ⌘K  Link or card\n⌘P  Find and switch notes\n⌘⇧S  Strikethrough\n⌘⇧7 / 8 / 9  Checklist / bullets / numbers\n⌘⌥1–4  Heading levels\n⌘⇧\\  Code block\n⌘N  New note     ⌘⇧N  New folder\n⌘O  Open notes folder     ⌘S  Save\n⌘\\  Toggle sidebar     ⌘⌥\\  Details and outline\n⌃⌘1 / 2 / 3  Live / reading / source\n\nType / at the start of a paragraph for blocks.\nDrag near a row’s edge to reorder. Drop in the middle of a folder to move inside it.\nRight-click any item to pin or bookmark it.\nRich cards: click to select, then click again to open."
                     alert.runModal()
                 }
             }

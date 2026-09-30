@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data: file:; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data: https: notes-asset: 'self'; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
   <title>Linear Notes Editor</title>
   <link rel="stylesheet" href="editor.css">
 </head>
@@ -13,7 +13,35 @@
     <div id="editor"></div>
     <textarea id="source" spellcheck="false" aria-label="Markdown source" hidden></textarea>
     <div id="endnote"></div>
+    <div id="image-error" role="alert" hidden></div>
   </main>
+  <input id="image-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp" aria-label="Choose an image" hidden>
+  <dialog id="image-dialog"><form method="dialog">
+    <h2>Image description</h2><p>Describe the image for people using a screen reader.</p>
+    <label>Alt text<input id="image-alt" maxlength="1000"></label>
+    <div class="dialog-actions"><button value="cancel">Cancel</button><button value="save" class="primary">Save</button></div>
+  </form></dialog>
+  <dialog id="callout-dialog"><form method="dialog">
+    <h2>Callout style</h2>
+    <label>Colour<input id="callout-colour" type="color"></label>
+    <div class="callout-swatches">
+      <button type="button" data-callout-colour="">Default</button>
+      <button type="button" data-callout-colour="#8794f5" aria-label="Violet">Violet</button>
+      <button type="button" data-callout-colour="#73c7a5" aria-label="Green">Green</button>
+      <button type="button" data-callout-colour="#e1bd70" aria-label="Amber">Amber</button>
+      <button type="button" data-callout-colour="#de8aa4" aria-label="Rose">Rose</button>
+    </div>
+    <label>Icon or emoji<input id="callout-icon" maxlength="64" placeholder="Use the default icon"></label>
+    <div class="callout-icons">
+      <button type="button" data-callout-icon="" aria-label="Default icon">Default</button>
+      <button type="button" data-callout-icon="💡" aria-label="Light bulb">💡</button>
+      <button type="button" data-callout-icon="📌" aria-label="Pin">📌</button>
+      <button type="button" data-callout-icon="⭐" aria-label="Star">⭐</button>
+      <button type="button" data-callout-icon="⚠" aria-label="Warning">⚠</button>
+      <button type="button" data-callout-icon="✓" aria-label="Check">✓</button>
+    </div>
+    <div class="dialog-actions"><button value="cancel">Cancel</button><button value="save" class="primary">Apply</button></div>
+  </form></dialog>
   <div id="slash" class="popover" role="listbox" aria-label="Insert a block" hidden></div>
   <div id="bubble" class="popover" role="toolbar" aria-label="Selection formatting" hidden>
     <button data-command="paragraph" aria-label="Text style" title="Text style">H⌄</button>
