@@ -78,6 +78,8 @@ struct ContentView: View {
         .ignoresSafeArea()
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: store.sidebarVisible)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: store.inspectorVisible)
+        .sheet(isPresented: $store.quickOpenVisible) { QuickOpenView(store: store) }
+        .sheet(isPresented: $store.linearImportVisible) { LinearImportView(store: store) }
     }
 
     var sidebar: some View {
@@ -94,7 +96,7 @@ struct ContentView: View {
                     Text("Local workspace").font(.system(size: 10)).foregroundStyle(Palette.muted)
                 }
                 Spacer(minLength: 0)
-                Menu { Button("Open another folder…", action: store.chooseFolder); Button("Show in Finder") { store.reveal("") } } label: { Image(systemName: "chevron.down").font(.system(size: 9)) }.menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28, height: 28).accessibilityLabel("Workspace actions")
+                Menu { Button("Import from Linear…") { store.linearImportVisible = true }; Divider(); Button("Open another folder…", action: store.chooseFolder); Button("Show in Finder") { store.reveal("") } } label: { Image(systemName: "chevron.down").font(.system(size: 9)) }.menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28, height: 28).accessibilityLabel("Workspace actions")
             }.padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 18)
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(Palette.muted)
@@ -103,7 +105,7 @@ struct ContentView: View {
             }.padding(.horizontal, 10).padding(.vertical, 8).background(Palette.canvas.opacity(0.6), in: RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.line)).padding(.horizontal, 14)
             ScrollView {
                 VStack(alignment: .leading, spacing: 1) {
-                    if store.query.isEmpty {
+                    if store.searchTerm.isEmpty {
                         sectionLabel("Bookmarks")
                             .onDrop(of: [.text], isTargeted: nil) { loadDrop($0) { store.bookmarkDrop($0) } }
                         if store.bookmarks.isEmpty {
@@ -119,9 +121,12 @@ struct ContentView: View {
                         Color.clear.frame(height: 60).contentShape(Rectangle()).onDrop(of: [.text], isTargeted: nil) { loadDrop($0) { store.move($0, parent: "") } }
                     } else {
                         sectionLabel("Search results")
-                        let matches = store.items.filter { $0.path.localizedCaseInsensitiveContains(store.query) }
-                        ForEach(matches) { item in row(item, depth: 0) }
-                        if matches.isEmpty { Text("No notes found").font(.system(size: 12)).foregroundStyle(Palette.secondary).padding(20) }
+                        ForEach(store.searchResults) { result in
+                            Button { store.select(result.id) } label: { SearchResultRow(result: result, query: store.query) }.buttonStyle(.plain)
+                                .background(store.selected == result.id ? Palette.control : .clear, in: RoundedRectangle(cornerRadius: 8))
+                        }
+                        if let error = store.searchError { Text(error).font(.system(size: 12)).foregroundStyle(.orange).padding(10) }
+                        if store.searchResults.isEmpty { Text(store.searching ? "Searching…" : "No notes found").font(.system(size: 12)).foregroundStyle(Palette.secondary).padding(20) }
                     }
                 }.padding(.horizontal, 8).padding(.top, 14)
             }
@@ -144,6 +149,7 @@ struct ContentView: View {
             Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.muted)
             Spacer()
             if title == "Notes" {
+                Button { store.quickOpenVisible = true } label: { Image(systemName: "magnifyingglass").font(.system(size: 11)) }.help("Search notes · ⌘P").accessibilityLabel("Search notes")
                 Button { store.create() } label: { Image(systemName: "plus").font(.system(size: 12)).frame(width: 28, height: 28) }.buttonStyle(ChromeButtonStyle()).accessibilityLabel("New note").foregroundStyle(Palette.muted).help("New note")
             }
         }.padding(.horizontal, 12).padding(.top, title == "Notes" ? 23 : 7).padding(.bottom, 9)
@@ -232,6 +238,20 @@ struct ContentView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     if let selected = store.selected {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Outline").foregroundStyle(Palette.muted)
+                            if store.mode == .source { Text("View the outline in Live Preview or Reading.").font(.system(size: 12)).foregroundStyle(Palette.muted) }
+                            else if store.headings.isEmpty { Text("Add headings to navigate this note.").font(.system(size: 12)).foregroundStyle(Palette.muted) }
+                            else {
+                                ForEach(store.headings) { heading in
+                                    Button { store.bridge?.jumpToHeading(heading.id) } label: {
+                                        Text(heading.text.isEmpty ? "Untitled heading" : heading.text).lineLimit(2).multilineTextAlignment(.leading)
+                                            .padding(.leading, CGFloat(max(0, heading.level - 1) * 12)).padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                                    }.buttonStyle(.plain).background(store.activeHeading == heading.id ? Palette.control : .clear, in: RoundedRectangle(cornerRadius: 6))
+                                        .accessibilityAddTraits(store.activeHeading == heading.id ? .isSelected : [])
+                                }
+                            }
+                        }
                         VStack(alignment: .leading, spacing: 12) {
                             HStack {
                                 Text("Properties").foregroundStyle(Palette.muted)
@@ -258,6 +278,10 @@ struct ContentView: View {
                                 .padding(12).background(Palette.canvas, in: RoundedRectangle(cornerRadius: 8))
                         }
                         VStack(alignment: .leading, spacing: 12) {
+                            if let source = store.propertyRows.first(where: { $0.name == "linearDocumentUrl" })?.value,
+                               let url = URL(string: source.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))), url.scheme == "https", url.host == "linear.app" {
+                                Link("Open original in Linear", destination: url)
+                            }
                             Text("Document").foregroundStyle(Palette.muted)
                             HStack { Text("Mode"); Spacer(); Picker("Mode", selection: $store.mode) {
                                 ForEach(EditorMode.allCases, id: \.self) { Text($0.title).tag($0) }

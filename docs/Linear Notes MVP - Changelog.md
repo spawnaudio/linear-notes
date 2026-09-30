@@ -2,6 +2,30 @@
 
 This document records feature-set changes and additions after the original product outline. The original outline remains in [Linear Notes - v1.0 Ideation](<Linear Notes - v1.0 Ideation.md>).
 
+## 1.3.0 — Images, finding notes, and Linear import · 1 October 2026
+
+### Added / Changed / Fixed
+
+- Real image rendering in Live Preview and Reading, with paste/drop, a native image picker, replacement/removal, and alt-text editing. Raster attachments remain separate portable files; app-managed note moves update their relative links.
+- Content search with matching excerpts and a native `⌘P` quick switcher with arrow/Enter navigation. `⌘K` remains the link shortcut.
+- Read-only Linear project/document browsing and single-document Markdown import. Personal keys stay in macOS Keychain; source metadata supports duplicate-safe import after local renames and retains local edits. Authenticated Linear raster images load through the native host with a strict host check and no redirects.
+- Callout colours and icon/emoji selection through a contextual picker. Custom metadata preserves existing titles, fold markers, content, and undo.
+- Heading outline in the existing details sidebar, with click-to-scroll, hierarchy, and current-section highlighting. Available in Live Preview and Reading.
+- Corrected rich-card tokenization so it cannot split image Markdown; preserved surrounding text for images within paragraphs.
+- Packaged as **Linear Notes v1.3.app**, version **1.3.0**.
+
+### Validation
+
+- 14 native tests and 21 editor tests pass, including attachment move/path checks, search drafts, API pagination/errors/host validation, duplicate-safe imports, image paste/drop, stale replies, callout styles/undo, and heading navigation.
+- Native walkthrough used an isolated app and temporary notebook: content search/empty results, keyboard quick switching, local image rendering and native image insertion/save, outline navigation, mode switching, and the Linear connection sheet.
+- Release build and local signature verification pass.
+
+### Limits
+
+- Live Linear browsing/import and authenticated image loading require a personal key and have not been verified against a signed-in workspace. Request handling was tested with stub responses.
+- Imported remote image URLs require a connection; images are not copied for offline use. No automatic or two-way synchronization, OAuth connection, or bulk import.
+- Full accessibility coverage and very large notebook performance remain unverified. Callout fold markers remain preserved without collapsing the callout body.
+
 ## 1.2.0 — Desktop redesign · 1 October 2026
 
 ### Changed

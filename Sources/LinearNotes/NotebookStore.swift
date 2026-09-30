@@ -8,6 +8,8 @@ enum EditorMode: String, CaseIterable { case live, reading, source
     var icon: String { switch self { case .live: "pencil.line"; case .reading: "book"; case .source: "chevron.left.forwardslash.chevron.right" } }
 }
 
+struct NoteHeading: Identifiable { let id: Int; let level: Int; let text: String }
+
 @MainActor final class NotebookStore: ObservableObject {
     @Published var items: [NoteItem] = []
     @Published var selected: String?
@@ -17,7 +19,14 @@ enum EditorMode: String, CaseIterable { case live, reading, source
     @Published var inspectorVisible = false
     @Published var properties = ""
     @Published var propertyRows: [(name: String, value: String)] = []
-    @Published var query = ""
+    @Published var query = "" { didSet { refreshSearch() } }
+    @Published var searchResults: [NoteSearchResult] = []
+    @Published var searchError: String?
+    @Published var searching = false
+    @Published var quickOpenVisible = false { didSet { if quickOpenVisible { refreshSearch() } } }
+    @Published var linearImportVisible = false
+    @Published var headings: [NoteHeading] = []
+    @Published var activeHeading = -1
     @Published var documentVersion = 0
     @Published var metadataVersion = 0
     @Published var status = "Saved locally"
@@ -30,8 +39,10 @@ enum EditorMode: String, CaseIterable { case live, reading, source
     var dirty = false
     var securityURL: URL?
     var autosave: Task<Void, Never>?
+    var searchTask: Task<Void, Never>?
     var poller: Timer?
     weak var bridge: EditorBridge?
+    var searchTerm: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     init() {
         let args = ProcessInfo.processInfo.arguments
@@ -53,6 +64,23 @@ enum EditorMode: String, CaseIterable { case live, reading, source
         panel.prompt = "Open notes folder"; panel.message = "Choose a folder containing your Markdown files."
         if panel.runModal() == .OK, let url = panel.url { open(url) }
     }
+    func refreshSearch() {
+        searchTask?.cancel(); searchError = nil
+        guard let library, !searchTerm.isEmpty || quickOpenVisible else { searchResults = []; searching = false; return }
+        let root = library.root, term = query, notes = items
+        let drafts = selected.map { [$0: markdown] } ?? [:]
+        searching = true
+        searchTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(180))
+                let scan = Task.detached { try NoteLibrary(root: root).search(term, in: notes, drafts: drafts) }
+                let results = try await withTaskCancellationHandler { try await scan.value } onCancel: { scan.cancel() }
+                guard !Task.isCancelled, let self, self.library?.root == root, self.query == term else { return }
+                self.searchResults = results; self.searching = false
+            } catch is CancellationError { }
+            catch { if !Task.isCancelled { self?.searchError = error.localizedDescription; self?.searchResults = []; self?.searching = false } }
+        }
+    }
     func open(_ url: URL, remember: Bool = true) {
         guard save() else { return }
         do {
@@ -63,6 +91,7 @@ enum EditorMode: String, CaseIterable { case live, reading, source
             securityURL?.stopAccessingSecurityScopedResource(); securityURL = acquired ? url : nil
             library = next; rootName = url.lastPathComponent; selected = nil; markdown = ""; baseline = ""; dirty = false
             error = nil; conflict = false; items = try next.scan(); documentVersion += 1
+            headings = []; activeHeading = -1; refreshSearch()
             if remember, let bookmark = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) { UserDefaults.standard.set(bookmark, forKey: "notesFolderBookmark") }
             let last = next.sidebar.lastSelected
             if let first = items.first(where: { !$0.isFolder && $0.path == last }) ?? next.children(of: "", in: items).first(where: { !$0.isFolder }) ?? items.first(where: { !$0.isFolder }) { select(first.path) }
@@ -93,6 +122,7 @@ enum EditorMode: String, CaseIterable { case live, reading, source
         guard path != selected, save(), let library else { return }
         do {
             let text = try library.read(path); selected = path; markdown = text; baseline = text; dirty = false
+            headings = []; activeHeading = -1
             status = "Saved locally"; conflict = false; error = nil; documentVersion += 1
             mutateSidebar { $0.lastSelected = path }
         } catch { self.error = error.localizedDescription }
@@ -100,6 +130,7 @@ enum EditorMode: String, CaseIterable { case live, reading, source
     func changed(_ text: String, id: String) {
         guard id == selected, text != markdown else { return }
         markdown = text; dirty = text != baseline; status = dirty ? "Saving…" : "Saved locally"
+        refreshSearch()
         autosave?.cancel(); autosave = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(350)); guard !Task.isCancelled else { return }; self?.save()
         }
@@ -128,6 +159,7 @@ enum EditorMode: String, CaseIterable { case live, reading, source
     }
     func refreshFromDisk() {
         guard let library else { return }
+        defer { if (!searchTerm.isEmpty || quickOpenVisible) && !searching { refreshSearch() } }
         do {
             let scanned = try library.scan(); if Set(scanned) != Set(items) { items = scanned }
             guard let selected else { return }
@@ -180,7 +212,8 @@ enum EditorMode: String, CaseIterable { case live, reading, source
             let next = try library.move(path, to: parent, before: before, newName: newName)
             items = try library.scan(); metadataVersion += 1
             if let oldSelected, oldSelected == path || oldSelected.hasPrefix(path + "/") {
-                selected = next + oldSelected.dropFirst(path.count); documentVersion += 1
+                selected = next + oldSelected.dropFirst(path.count)
+                markdown = try library.read(selected!); baseline = markdown; documentVersion += 1
             }
             if !parent.isEmpty { mutateSidebar { $0.expanded.insert(parent) } }
         } catch { self.error = error.localizedDescription }

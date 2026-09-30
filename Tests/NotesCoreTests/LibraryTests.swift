@@ -72,4 +72,58 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(try library.read("Note.md"), "# Original\n")
         XCTAssertEqual(try NoteLibrary(root: root).sidebar.bookmarks, ["Note.md"])
     }
+
+    func testContentSearchIncludesDraftsAndRanksTitles() throws {
+        _ = try library.create(name: "Reference", content: "An idea about café sidebars 📝.")
+        _ = try library.create(name: "Sidebar", content: "A title match")
+        let draft = try library.create(name: "Unfinished", content: "Old")
+        let items = try library.scan()
+        XCTAssertEqual(try library.search("sidebar", in: items).map(\.id), ["Sidebar.md", "Reference.md"])
+        XCTAssertTrue(try library.search("cafe", in: items).first?.excerpt.contains("café") == true)
+        XCTAssertEqual(try library.search("unsaved", in: items, drafts: [draft: "An unsaved thought"]).map(\.id), [draft])
+        XCTAssertTrue(try library.search("absent", in: items).isEmpty)
+    }
+
+    func testImagesStayLocalAndSurviveNoteMoves() throws {
+        let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=")!
+        _ = try library.create(name: "Projects", folder: true)
+        let path = try library.create(name: "Visual", parent: "Projects")
+        let image = try library.storeImage(png, for: path)
+        XCTAssertTrue(image.hasPrefix("../Attachments/"))
+        XCTAssertEqual(try Data(contentsOf: library.imageURL(image, in: path)), png)
+        _ = try library.storeImage(png, for: path)
+        XCTAssertFalse(try library.scan().contains { $0.path == "Attachments" })
+        let content = "# Visual\n\n![A screenshot](\(image))\n\n`![Inline example](\(image))`\n\n```md\n![Example](\(image))\n```\n"
+        try library.save(content, to: path, expected: "")
+        let moved = try library.move(path, to: "")
+        let output = try library.read(moved)
+        XCTAssertTrue(output.contains("![A screenshot](Attachments/"))
+        XCTAssertTrue(output.contains("```md\n![Example](../Attachments/"))
+        XCTAssertTrue(output.contains("`![Inline example](../Attachments/"))
+        _ = try library.create(name: UUID().uuidString, parent: "Attachments", content: "A user note")
+        XCTAssertTrue(try library.scan().contains { $0.parent == "Attachments" && !$0.isFolder })
+        XCTAssertThrowsError(try library.move("Attachments", to: "Projects"))
+        XCTAssertThrowsError(try library.imageURL("../../etc/passwd", in: moved))
+        XCTAssertThrowsError(try library.imageURL("file:///etc/passwd", in: moved))
+        XCTAssertThrowsError(try library.storeImage(Data("<svg onload='alert(1)'/>".utf8), for: moved))
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("Alias.png"), withDestinationURL: try library.imageURL(image, in: path))
+        XCTAssertThrowsError(try library.imageURL("Alias.png", in: moved))
+    }
+
+    func testLinearImportsKeepSourceAndNeverOverwriteRepeatedImports() throws {
+        let id = UUID().uuidString, project = UUID().uuidString
+        _ = try library.create(name: "Editor Guide", content: "Personal note")
+        let path = try library.importLinearDocument(id: id, projectID: project, title: "Editor Guide", sourceURL: "https://linear.app/test/document/guide", content: "# Imported\n", parent: "")
+        XCTAssertEqual(path, "Editor Guide 2.md")
+        let original = try library.read(path)
+        XCTAssertTrue(original.contains("linearDocumentId: \(id.lowercased())"))
+        XCTAssertTrue(original.contains("linearDocumentUrl:"))
+        let edited = (original + "\nLocal draft").replacingOccurrences(of: "\n", with: "\r\n")
+        try library.save(edited, to: path, expected: original)
+        let renamed = try library.move(path, to: "", newName: "Renamed.md")
+        XCTAssertEqual(try library.importLinearDocument(id: id, projectID: project, title: "Editor Guide", sourceURL: "https://linear.app/test/document/guide", content: "Different remote text", parent: ""), renamed)
+        XCTAssertEqual(try library.read(renamed), edited)
+        XCTAssertEqual(try library.read("Editor Guide.md"), "Personal note")
+        XCTAssertThrowsError(try library.importLinearDocument(id: id, projectID: project, title: "Bad", sourceURL: "https://example.com/document", content: "", parent: ""))
+    }
 }

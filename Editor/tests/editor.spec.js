@@ -297,3 +297,115 @@ test('expanded properties reach the native host after source edits and property 
   await expect.poll(async () => (await latest()).text).toBe('status: Done\ntags: [writing]');
   expect(await markdown(page)).toBe('---\nstatus: Done\ntags: [writing]\n---\n# Body');
 });
+
+const pixel = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=';
+
+test('images render, edit alt text, survive modes, and reject executable references', async ({ page }) => {
+  const original = `# Visual\n\n![Reference](data:image/png;base64,${pixel})\n`;
+  await load(page, original);
+  await expect(page.locator('.note-image img')).toBeVisible();
+  expect(await page.locator('.note-image img').evaluate(img => img.naturalWidth)).toBe(1);
+  await page.locator('.note-image img').click();
+  await page.getByRole('button', { name: 'Alt text', exact: true }).click();
+  await page.locator('#image-alt').fill('A tiny reference image');
+  await page.locator('#image-dialog').getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.locator('.note-image img')).toHaveAttribute('alt', 'A tiny reference image');
+  const saved = await markdown(page);
+  expect(saved).toContain('![A tiny reference image]');
+  await load(page, saved, 'reading');
+  await expect(page.locator('.note-image img')).toHaveAttribute('alt', 'A tiny reference image');
+  await expect(page.locator('.image-tools')).toBeHidden();
+  for (const mode of ['source', 'live', 'reading']) await page.evaluate(mode => window.notes.setMode(mode), mode);
+  expect(await markdown(page)).toBe(saved);
+  await load(page, '![Unsafe](javascript:alert)\n\n![External file](file:///etc/passwd)');
+  await expect(page.locator('.note-image img:visible')).toHaveCount(0);
+  await load(page, `Before ![Inline](data:image/png;base64,${pixel} "card") after.`);
+  await expect(page.locator('.note-image img')).toBeVisible();
+  await page.locator('.tiptap').evaluate(el => el.editor.commands.insertContentAt(1, 'Still here. '));
+  expect(await markdown(page)).toContain('Before'); expect(await markdown(page)).toContain('after.');
+  await page.locator('.note-image img').click();
+  await page.getByRole('button', { name: 'Remove', exact: true }).click();
+  await expect(page.locator('.note-image')).toHaveCount(0);
+});
+
+test('image paste and drop use the native attachment bridge and discard stale replies', async ({ page }) => {
+  await load(page, '# Images\n\n');
+  await page.locator('.tiptap > p').click();
+  await page.locator('.tiptap').evaluate((el, pixel) => {
+    const bytes = Uint8Array.from(atob(pixel), c => c.charCodeAt(0));
+    const data = new DataTransfer(); data.items.add(new File([bytes], 'Reference.png', { type: 'image/png' }));
+    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  }, pixel);
+  await expect.poll(() => page.evaluate(() => window.messages.filter(m => m.type === 'attachment').length)).toBe(1);
+  const request = await page.evaluate(() => window.messages.find(m => m.type === 'attachment'));
+  expect(request.data).toBe(pixel);
+  await page.evaluate(({ request, pixel }) => window.notes.attachment({ id: request.id, request: request.request, src: `data:image/png;base64,${pixel}` }), { request, pixel });
+  await expect(page.locator('.note-image img')).toBeVisible();
+  await page.locator('.note-image img').click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Replace', exact: true }).click();
+  await (await chooser).setFiles({ name: 'Replacement.png', mimeType: 'image/png', buffer: Buffer.from(pixel, 'base64') });
+  await expect.poll(() => page.evaluate(() => window.messages.filter(m => m.type === 'attachment').length)).toBe(2);
+  const replacement = await page.evaluate(() => window.messages.filter(m => m.type === 'attachment').at(-1));
+  const gif = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+  await page.evaluate(({ replacement, gif }) => window.notes.attachment({ id: replacement.id, request: replacement.request, src: gif }), { replacement, gif });
+  await expect(page.locator('.note-image img')).toHaveAttribute('src', gif);
+  await expect(page.locator('.note-image img')).toHaveAttribute('alt', 'Reference');
+  await expect(page.locator('.note-image')).toHaveCount(1);
+  await page.locator('.tiptap').evaluate((el, pixel) => {
+    const data = new DataTransfer(); data.items.add(new File([Uint8Array.from(atob(pixel), c => c.charCodeAt(0))], 'Dropped.png', { type: 'image/png' }));
+    const bounds = el.getBoundingClientRect();
+    el.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true, clientX: bounds.left + 20, clientY: bounds.top + 40 }));
+  }, pixel);
+  await expect.poll(() => page.evaluate(() => window.messages.filter(m => m.type === 'attachment').length)).toBe(3);
+  const stale = await page.evaluate(() => window.messages.filter(m => m.type === 'attachment').at(-1));
+  await page.evaluate(() => window.notes.load({ id: 'other.md', markdown: '# Other', mode: 'live' }));
+  await page.evaluate(({ stale, pixel }) => window.notes.attachment({ id: stale.id, request: stale.request, src: `data:image/png;base64,${pixel}` }), { stale, pixel });
+  expect(await markdown(page)).toBe('# Other');
+  await expect(page.locator('.note-image')).toHaveCount(0);
+});
+
+test('callout colour and emoji round-trip with legacy titles, undo and reading protection', async ({ page }) => {
+  await load(page, '> [!TIP]+ Existing title\n> Keep **this** content.\n');
+  await page.getByRole('button', { name: 'Change callout style' }).click();
+  await page.getByRole('button', { name: 'Green', exact: true }).click();
+  await page.getByRole('button', { name: 'Pin', exact: true }).click();
+  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(page.locator('.callout-icon')).toHaveText('📌');
+  const saved = await markdown(page);
+  expect(saved).toContain('> [!TIP]+ Existing title <!--linear-notes-callout:');
+  expect(saved).toContain('> Keep **this** content.');
+  await expect(page.locator('.callout-icon')).toHaveText('📌');
+  await page.evaluate(() => window.notes.command('undo'));
+  await expect(page.locator('.callout-icon')).toHaveText('💡');
+  await load(page, saved);
+  await expect(page.locator('.callout-heading')).toHaveText('Existing title');
+  await expect(page.locator('.callout-icon')).toHaveText('📌');
+  expect((await json(page)).content[0].attrs.colour).toBe('#73c7a5');
+  await page.evaluate(() => window.notes.setMode('reading'));
+  await expect(page.locator('.callout-icon')).toBeDisabled();
+  expect(await markdown(page)).toBe(saved);
+  await load(page, '> [!NOTE]\n> No compulsory heading.');
+  await expect(page.locator('.callout-heading')).toBeHidden();
+  await load(page, '> [!NOTE] Literal <!--linear-notes-callout:null-->\n> Content stays.');
+  await expect(page.locator('.callout-heading')).toContainText('Literal <!--linear-notes-callout:null-->');
+});
+
+test('outline reflects rendered headings, scroll position and modes; quick switching keeps the link shortcut', async ({ page }) => {
+  const original = '# One\n\n' + 'Paragraph.\n\n'.repeat(35) + '## Two\n\n### Detail\n\n```md\n# Not a heading\n```';
+  await load(page, original);
+  const latest = () => page.evaluate(() => window.messages.filter(m => m.type === 'outline').at(-1));
+  expect((await latest()).headings).toEqual([{ index: 0, level: 1, text: 'One' }, { index: 1, level: 2, text: 'Two' }, { index: 2, level: 3, text: 'Detail' }]);
+  await page.evaluate(() => window.notes.jumpToHeading(1));
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(300);
+  expect(await markdown(page)).toBe(original);
+  await page.evaluate(() => window.notes.setMode('source'));
+  expect((await latest()).headings).toEqual([]);
+  await page.evaluate(() => window.notes.setMode('reading'));
+  expect((await latest()).headings).toHaveLength(3);
+  await page.keyboard.press('Meta+p');
+  expect(await page.evaluate(() => window.messages.some(m => m.type === 'quickOpen'))).toBe(true);
+  await page.evaluate(() => window.notes.setMode('live'));
+  await page.locator('.tiptap h1').click(); await page.keyboard.press('Meta+k');
+  await expect(page.locator('#link-dialog')).toBeVisible();
+});

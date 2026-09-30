@@ -56,3 +56,18 @@ Compared the native preview with the supplied Linear screenshot. The context str
 - Installed at `/Applications/Linear Notes v1.2.app`; local signature verification passed.
 - Installed executable hash matches the release executable. Installed editor JavaScript, CSS, and HTML match the bundled sources; the fixed formatting toolbar is absent.
 - Launched the installed app and verified its running executable comes from that exact Applications path.
+
+## Five feature additions — 1.3.0 · 1 October 2026
+
+- All **14 native tests** pass (11 storage, 3 read-only Linear API). Added checks cover body/draft search and title ranking, Unicode matching, local image validation and secure paths, attachment links after note moves, preserving fenced/inline code examples, stable source IDs after renamed/edited imports, filename collisions, API pagination/errors, inaccessible documents, and image-host restrictions.
+- All **21 editor tests** pass. New coverage includes actual raster rendering; alt text, replacement, removal and mode preservation; image paste/drop through the native message contract; discarding stale replies; images within prose without losing surrounding text; coloured/emoji callouts, legacy titles/fold markers and undo; malformed metadata preservation; heading outline/navigation; and retaining the link shortcut alongside quick switching.
+- `scripts/build.sh` produced **dist/Linear Notes v1.3.app** and verified its local signature. The release used the default Xcode build system; native tests used the native SwiftPM build system with compiler plugins enabled.
+- A separate QA bundle and temporary notebook verified native content search for a phrase absent from filenames, highlighted matching excerpts, no results for an absent phrase, `⌘P` arrow/Enter note switching, local image rendering through the secure asset handler, image insertion from the native picker with a new relative attachment saved on disk, heading outline/navigation, and mode switching. The selected note and saved attachment references persisted after quitting and reopening the QA app. The QA app was closed and its temporary notebook removed.
+- The native Linear connection sheet opens and requires a key before Connect is enabled. No real workspace credential was supplied, so live project browsing/import, Keychain save/removal after successful connection, authenticated Linear image rendering, and workspace permissions remain unverified. API request/response behaviour used stub responses; this is not live integration proof.
+- Images imported as remote URLs still need connectivity; no offline asset copying or two-way sync was implemented. Very large notebooks, all native drag/clipboard formats, full accessibility, and distribution signing/notarization remain unverified.
+
+### Installed replacement — 1 October 2026
+
+- Rebuilt v1.3 with `scripts/build.sh` and verified the packaged and installed signatures.
+- Replaced `/Applications/Linear Notes v1.2.app` with `/Applications/Linear Notes v1.3.app`; the installed bundle reports 1.3.0 and its executable SHA-256 matches the packaged build.
+- Launched the installed executable and verified a registered on-screen native window. macOS was locked during installation, so accessibility inspection and a fresh screenshot of the installed window were unavailable. The earlier 35 passing checks and isolated native walkthrough apply to the same feature implementation; live Linear integration still requires a workspace key.
