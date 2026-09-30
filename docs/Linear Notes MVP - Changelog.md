@@ -2,6 +2,23 @@
 
 This document records feature-set changes and additions after the original product outline. The original outline remains in [Linear Notes - v1.0 Ideation](<Linear Notes - v1.0 Ideation.md>).
 
+## 1.2.0 — Desktop redesign · 1 October 2026
+
+### Changed
+
+- Linear desktop design reference adopted for the window shell, inset content panel, surface palette, typography, controls, cards, and interaction states.
+- Rounded document panel separated from the darker tab/status shell; removed the sidebar footer divider and aligned the app title with window controls.
+- Added a collapsible right details sidebar with expanded properties, document mode, word count, save status, file path, and pin/bookmark/Finder actions (`⌘⌥\`).
+- Removed the fixed formatting bar. Text selection opens the floating formatting toolbar; slash commands use compact grouped rows and shortcut hints.
+- Improved light/dark contrast for metadata, callouts, and primary actions, plus keyboard activation and accessible names for native controls.
+- App bundle is named **Linear Notes v1.2.app**, with version **1.2.0**.
+
+### Validation
+
+- 8 storage tests and 17 editor interaction tests pass.
+- Native details sidebar open/close, property display, Reading-mode restrictions, and property editing from Source checked with a temporary notebook.
+- Release build and local signature verification pass. Full accessibility, native light appearance, and every drag interaction remain unverified.
+
 ## 0.1.0 — Initial MVP
 
 ### Added

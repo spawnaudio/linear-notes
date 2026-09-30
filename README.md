@@ -6,7 +6,7 @@ A minimal macOS notes app inspired by [Linear Documents](https://linear.app/docs
 
 ## Try it
 
-Open **dist/Linear Notes.app**, then choose a folder containing `.md` or `.markdown` files. The included `Examples/Notebook` is a small starter notebook. The app remembers folders you choose through its folder picker.
+Open **dist/Linear Notes v1.2.app**, then choose a folder containing `.md` or `.markdown` files. The included `Examples/Notebook` is a small starter notebook. The app remembers folders you choose through its folder picker.
 
 Requires macOS 15 or later. This is a locally signed MVP, not a notarized distribution build. The app is called Linear Notes as a working title; it is not affiliated with Linear.
 
@@ -69,7 +69,7 @@ npm run build
 npm test
 ```
 
-Browser tests use the local Google Chrome installation on macOS. `npm run build` produces the offline resources under `Sources/LinearNotes/Resources/Editor`. The build script packages `dist/Linear Notes.app` and verifies its local signature.
+Browser tests use the local Google Chrome installation on macOS. `npm run build` produces the offline resources under `Sources/LinearNotes/Resources/Editor`. The build script packages `dist/Linear Notes v1.2.app` and verifies its local signature.
 
 ## MVP boundaries
 

@@ -38,6 +38,7 @@ import AppKit
             }
             CommandGroup(after: .sidebar) {
                 Button("Toggle Sidebar") { store.sidebarVisible.toggle() }.keyboardShortcut("\\")
+                Button("Toggle Details Sidebar") { store.inspectorVisible.toggle() }.keyboardShortcut("\\", modifiers: [.command, .option])
                 Divider()
                 Button("Live Preview") { store.mode = .live }.keyboardShortcut("1", modifiers: [.command, .control])
                 Button("Reading Mode") { store.mode = .reading }.keyboardShortcut("2", modifiers: [.command, .control])
@@ -61,7 +62,8 @@ import AppKit
         DispatchQueue.main.async {
             if let window = NSApp.windows.first {
                 window.delegate = self; window.titlebarAppearsTransparent = true
-                window.backgroundColor = NSColor.windowBackgroundColor
+                window.backgroundColor = NSColor(Palette.sidebar)
+                window.titlebarSeparatorStyle = .none
                 window.setFrameAutosaveName("LinearNotesMainWindow")
             }
         }

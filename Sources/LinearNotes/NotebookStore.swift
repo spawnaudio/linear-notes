@@ -14,6 +14,9 @@ enum EditorMode: String, CaseIterable { case live, reading, source
     @Published var markdown = ""
     @Published var mode: EditorMode = .live
     @Published var sidebarVisible = true
+    @Published var inspectorVisible = false
+    @Published var properties = ""
+    @Published var propertyRows: [(name: String, value: String)] = []
     @Published var query = ""
     @Published var documentVersion = 0
     @Published var metadataVersion = 0
