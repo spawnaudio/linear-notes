@@ -157,7 +157,7 @@ function splitFrontmatter(text) {
   const match = /^(\uFEFF?---\r?\n(?:[\s\S]*?\r?\n)?(?:---|\.\.\.)[ \t]*(?:\r?\n|$))/.exec(text);
   return match ? [match[0], text.slice(match[0].length)] : ['', text];
 }
-function propertiesText() { return frontmatter.replace(/^\uFEFF?---\r?\n/, '').replace(/(?:^|\r?\n)(?:---|\.\.\.)[ \t]*\r?\n?$/, ''); }
+function propertiesText() { return splitFrontmatter(currentMarkdown)[0].replace(/^\uFEFF?---\r?\n/, '').replace(/(?:^|\r?\n)(?:---|\.\.\.)[ \t]*\r?\n?$/, ''); }
 function drawProperties() {
   $('properties').replaceChildren();
   const text = propertiesText();
@@ -178,7 +178,17 @@ $('properties-dialog').addEventListener('close', () => {
 });
 
 function notifyChange() { $('source').value = currentMarkdown; send('change', { id: documentID, markdown: currentMarkdown }); reportStats(); }
-function reportStats() { const body = splitFrontmatter(currentMarkdown)[1]; send('stats', { id: documentID, words: body.trim().split(/\s+/).filter(Boolean).length }); }
+function propertyRows() {
+  // ponytail: preview simple top-level keys; the property editor preserves the complete source for complex YAML.
+  const rows = [];
+  for (const line of propertiesText().split('\n')) {
+    const match = /^(\w[\w -]*):[ \t]*(.*)$/.exec(line);
+    if (match) rows.push({ name: match[1], value: match[2] });
+    else if (rows.length && line.trim()) rows.at(-1).value += `\n${line}`;
+  }
+  return rows;
+}
+function reportStats() { send('properties', { id: documentID, text: propertiesText(), rows: propertyRows() }); const body = splitFrontmatter(currentMarkdown)[1]; send('stats', { id: documentID, words: body.trim().split(/\s+/).filter(Boolean).length }); }
 function loadDocument(payload) {
   loading = true; documentID = payload.id; currentMarkdown = payload.markdown; mode = payload.mode || 'live';
   [frontmatter] = splitFrontmatter(currentMarkdown);
@@ -188,7 +198,7 @@ function loadDocument(payload) {
 function applyMode() {
   document.body.dataset.mode = mode;
   $('source').hidden = mode !== 'source'; $('editor').hidden = mode === 'source';
-  $('properties').hidden = mode === 'source'; $('formatbar').style.visibility = mode === 'live' ? '' : 'hidden';
+  $('properties').hidden = mode === 'source';
   $('source').value = currentMarkdown; resizeSource(); editor.setEditable(mode === 'live', false); drawProperties();
   document.querySelectorAll('input[type=checkbox]').forEach(input => input.disabled = mode === 'reading');
 }
@@ -231,17 +241,21 @@ function updateSlash() {
 function drawSlash() {
   const menu = $('slash'); menu.replaceChildren();
   if (!slashMatches.length) return hideSlash();
-  const label = document.createElement('div'); label.className = 'slash-label'; label.textContent = 'Add to your document'; menu.append(label);
   slashMatches.forEach((command, index) => {
     const button = document.createElement('button'); button.className = `slash-option${index === slashIndex ? ' selected' : ''}`; button.role = 'option'; button.setAttribute('aria-selected', String(index === slashIndex));
     const icon = document.createElement('span'); icon.className = 'slash-icon'; icon.textContent = command.icon;
     const copy = document.createElement('span'); const name = document.createElement('span'); name.className = 'slash-name'; name.textContent = command.name;
-    const desc = document.createElement('span'); desc.className = 'slash-description'; desc.textContent = command.desc;
-    copy.append(name, desc); button.append(icon, copy); button.onmousedown = e => { e.preventDefault(); chooseSlash(command); }; menu.append(button);
+    button.title = command.desc;
+    const shortcut = document.createElement('span'); shortcut.className = 'slash-shortcut'; shortcut.textContent = command.shortcut || '';
+    copy.append(name); button.append(icon, copy, shortcut);
+    if (index && command.group !== slashMatches[index - 1].group) button.classList.add('group-start');
+    button.onmousedown = e => { e.preventDefault(); chooseSlash(command); };
+    button.onclick = e => { if (e.detail === 0) chooseSlash(command); };
+    menu.append(button);
   });
   const coords = editor.view.coordsAtPos(editor.state.selection.from); menu.hidden = false;
-  menu.style.left = `${Math.min(Math.max(10, coords.left), innerWidth - 300)}px`;
-  menu.style.top = `${Math.max(50, Math.min(coords.bottom + 8, innerHeight - Math.min(menu.scrollHeight, 330) - 12))}px`;
+  menu.style.left = `${Math.min(Math.max(10, coords.left), innerWidth - menu.offsetWidth - 12)}px`;
+  menu.style.top = `${Math.max(12, Math.min(coords.bottom + 8, innerHeight - menu.offsetHeight - 12))}px`;
   menu.querySelector('.selected')?.scrollIntoView({ block: 'nearest' });
 }
 function hideSlash() { $('slash').hidden = true; slashRange = null; slashIndex = 0; }
@@ -278,7 +292,7 @@ function execute(command) {
     case 'underline': return chain.toggleUnderline().run();
     case 'code': return chain.toggleCode().run();
     case 'paragraph': {
-      slashMatches = slashCommands.slice(0, 5); slashIndex = 0; slashRange = null; drawSlash(); return;
+      $('bubble').hidden = true; slashMatches = slashCommands.slice(0, 5); slashIndex = 0; slashRange = null; drawSlash(); return;
     }
     case 'text': return chain.setParagraph().run();
     case 'bullet': return chain.toggleBulletList().run();
@@ -295,19 +309,35 @@ function execute(command) {
   }
 }
 slashCommands[0].id = 'text';
-document.querySelectorAll('[data-command]').forEach(button => button.addEventListener('mousedown', e => { e.preventDefault(); execute(button.dataset.command); }));
+for (const command of slashCommands) {
+  command.group = ['text', 'h1', 'h2', 'h3', 'h4'].includes(command.id) ? 0 : ['bullet', 'ordered', 'task'].includes(command.id) ? 1 : 2;
+  command.shortcut = /^h[1-4]$/.test(command.id) ? `⌘ ⌥ ${command.id[1]}` : ({ bullet: '⌘ ⇧ 8', ordered: '⌘ ⇧ 9', task: '⌘ ⇧ 7', codeBlock: '⌘ ⇧ \\' })[command.id];
+}
+document.querySelectorAll('[data-command]').forEach(button => {
+  button.addEventListener('mousedown', e => { e.preventDefault(); execute(button.dataset.command); updateBubble(); });
+  button.addEventListener('click', e => { if (e.detail === 0) { execute(button.dataset.command); updateBubble(); } });
+});
 function updateBubble() {
   const { from, to, empty } = editor.state.selection;
   const bubble = $('bubble');
   if (empty || mode !== 'live' || !$('slash').hidden || editor.state.selection.node) { bubble.hidden = true; return; }
   const start = editor.view.coordsAtPos(from), end = editor.view.coordsAtPos(to);
-  bubble.hidden = false; bubble.style.top = `${Math.max(46, start.top - 44)}px`; bubble.style.left = `${Math.max(12, Math.min((start.left + end.left) / 2 - 85, innerWidth - 190))}px`;
+  bubble.hidden = false;
+  bubble.style.top = `${Math.max(12, start.top - bubble.offsetHeight - 8)}px`;
+  bubble.style.left = `${Math.max(12, Math.min((start.left + end.left) / 2 - bubble.offsetWidth / 2, innerWidth - bubble.offsetWidth - 12))}px`;
+  for (const button of bubble.querySelectorAll('[data-command]')) {
+    const mark = { strike: 'strike', codeBlock: 'codeBlock', bullet: 'bulletList', task: 'taskList', quote: 'blockquote' }[button.dataset.command] || button.dataset.command;
+    const active = editor.isActive(mark);
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  }
 }
 document.addEventListener('click', e => {
   const anchor = e.target.closest('a');
   if (anchor) { e.preventDefault(); if (mode === 'reading' || e.metaKey) openURL(anchor.getAttribute('href')); }
-  if (!e.target.closest('#slash') && !e.target.closest('#formatbar')) hideSlash();
+  if (!e.target.closest('#slash') && !e.target.closest('#bubble')) hideSlash();
 });
+window.addEventListener('resize', () => { $('bubble').hidden = true; hideSlash(); });
 window.addEventListener('scroll', () => { $('bubble').hidden = true; hideSlash(); }, { passive: true });
 window.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's' && !e.shiftKey) { e.preventDefault(); send('save'); }

@@ -209,3 +209,91 @@ test('checkbox edits persist and source cannot open dangerous URLs as cards', as
   await expect(page.locator('.rich-card')).toHaveCount(0);
   expect(await page.evaluate(() => window.messages.filter(m => m.type === 'openLink'))).toHaveLength(0);
 });
+
+
+test('desktop design keeps readable metadata and removes formatting chrome in reading and source', async ({ page }) => {
+  await load(page, fixture);
+  for (const colorScheme of ['light', 'dark']) {
+    await page.emulateMedia({ colorScheme });
+    const contrast = await page.evaluate(() => {
+      const css = getComputedStyle(document.documentElement);
+      const luminance = token => {
+        const raw = css.getPropertyValue(token).trim().slice(1);
+        const hex = raw.length === 3 ? [...raw].map(x => x + x).join('') : raw;
+        const channels = hex.match(/.{2}/g).map(x => parseInt(x, 16) / 255)
+          .map(x => x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4);
+        return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+      };
+      const semantic = ['--info', '--tip', '--warning', '--important'].map(token => {
+        const text = luminance(token), surface = luminance('--panel');
+        return (Math.max(text, surface) + 0.05) / (Math.min(text, surface) + 0.05);
+      });
+      const text = luminance('--muted');
+      return ['--bg', '--soft', '--panel'].map(token => {
+        const surface = luminance(token);
+        return (Math.max(text, surface) + 0.05) / (Math.min(text, surface) + 0.05);
+      }).concat(semantic);
+    });
+    for (const ratio of contrast) expect(ratio).toBeGreaterThanOrEqual(4.5);
+    await expect(page.locator('#formatbar')).toHaveCount(0);
+    for (const mode of ['reading', 'source']) {
+      await page.evaluate(mode => window.notes.setMode(mode), mode);
+      await expect(page.locator('#formatbar')).toHaveCount(0);
+      if (mode === 'reading') await expect(page.locator('.property').first()).toHaveCSS('opacity', '1');
+      expect(await markdown(page)).toBe(fixture);
+    }
+    await page.evaluate(() => window.notes.setMode('live'));
+  }
+});
+
+
+test('floating formatting keeps the selection and slash commands use compact grouped rows', async ({ page }) => {
+  await load(page, '# Heading\n\nSelect these words');
+  await page.locator('.tiptap > p').evaluate(el => {
+    const range = document.createRange(); range.selectNodeContents(el);
+    const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+  });
+  await expect(page.locator('#bubble')).toBeVisible();
+  await expect(page.locator('#formatbar')).toHaveCount(0);
+  await page.locator('#bubble').getByRole('button', { name: 'Bold', exact: true }).click();
+  await expect.poll(() => markdown(page)).toContain('**Select these words**');
+  await page.locator('#bubble').getByRole('button', { name: 'Underline', exact: true }).click();
+  await expect(page.locator('.tiptap u')).toHaveText('Select these words');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.screenshot({ path: '../artifacts/floating-formatting.png' });
+  await page.setViewportSize({ width: 420, height: 600 });
+  await load(page, '# Heading\n\nSelect these words');
+  await page.locator('.tiptap > p').evaluate(el => {
+    const range = document.createRange(); range.selectNodeContents(el);
+    const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+  });
+  await expect(page.locator('#bubble')).toBeVisible();
+  const bounds = await page.locator('#bubble').boundingBox();
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(420);
+  await page.evaluate(() => window.notes.setMode('reading'));
+  await expect(page.locator('#bubble')).toBeHidden();
+  await load(page, '');
+  await page.locator('.tiptap').click(); await page.keyboard.type('/');
+  await expect(page.locator('#slash')).toBeVisible();
+  await expect(page.locator('.slash-shortcut').filter({ hasText: '⌘ ⌥ 1' })).toHaveCount(1);
+  await expect(page.locator('.group-start')).toHaveCount(2);
+  await page.screenshot({ path: '../artifacts/slash-menu.png' });
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#slash')).toBeHidden();
+});
+
+test('expanded properties reach the native host after source edits and property edits', async ({ page }) => {
+  await load(page, fixture, 'source');
+  const latest = () => page.evaluate(() => window.messages.filter(m => m.type === 'properties').at(-1));
+  expect((await latest()).text).toContain('extra:\n  nested: preserved');
+  expect((await latest()).rows).toContainEqual({ name: 'extra', value: '\n  nested: preserved' });
+  await page.locator('#source').fill('---\nstatus: Ready\n---\n# Body');
+  expect((await latest()).text).toBe('status: Ready');
+  await page.evaluate(() => window.notes.properties());
+  await expect(page.locator('#properties-source')).toHaveValue('status: Ready');
+  await page.locator('#properties-source').fill('status: Done\ntags: [writing]');
+  await page.getByRole('button', { name: 'Save properties' }).click();
+  await expect.poll(async () => (await latest()).text).toBe('status: Done\ntags: [writing]');
+  expect(await markdown(page)).toBe('---\nstatus: Done\ntags: [writing]\n---\n# Body');
+});

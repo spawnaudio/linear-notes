@@ -24,7 +24,13 @@ The app should feel polished without feeling precious. It should feel native wit
 
 ## Reference synthesis
 
-The following references inform this draft. Their instructions, token names, and product assumptions are treated as reference material; they are not requirements for Linear Notes.
+The primary UI and UX reference is [Linear App Design Breakdown](https://linear.app/spawn-audio/document/linear-app-design-breakdown-a616cfb54f0a), also kept as a [local reference](<resources/Linear App Design Breakdown.md>). This is the 26-section desktop application analysis used for PokeTasks, saved under the `[DASHBOARD]` initiative. It covers the shell, surfaces, typography, spacing, navigation, components, interaction states, motion, accessibility, and fidelity checks.
+
+Linear Notes should share this desktop design language: neutral charcoal surfaces, hairline borders, compact navigation and controls, consistent alignment, restrained semantic colour, contextual disclosure, and fast keyboard-oriented interaction. Apply it to the sidebar, note list, tabs, headers, menus, and inspectors while retaining comfortable document typography and the app's writing, save, and conflict behaviour.
+
+For application chrome and component behaviour, this desktop breakdown takes precedence over the marketing-site references below. Its colours and dimensions are screenshot-derived starting values, not official Linear tokens; validate them in the native app and adapt them for light appearance and accessibility. The component catalogue is reference material, not a requirement to build every component.
+
+The following supplementary references inform this draft. Their instructions, token names, and product assumptions are treated as reference material; they are not requirements for Linear Notes.
 
 - [How we redesigned the Linear UI](https://linear.app/now/how-we-redesigned-the-linear-ui)
 - [Linear design analysis](https://github.com/voltagent/awesome-design-md/blob/main/design-md/linear.app/DESIGN.md)
@@ -34,6 +40,34 @@ The following references inform this draft. Their instructions, token names, and
 - [Linear theme for shadcn/ui](https://www.shadcnblocks.com/theme/linear)
 - [shadcn.io](https://www.shadcn.io)
 - The supplied reference files `DESIGN-linear.app.md` and `linear.design.md` from the Downloads folder.
+
+### Desktop redesign — 1 October 2026
+
+The implemented shell now follows the desktop breakdown above. These values supersede the earlier marketing palette for app chrome:
+
+| Role | Dark | Light |
+| --- | --- | --- |
+| Shell / sidebar | `#17181B` | `#F5F5F7` |
+| Document canvas | `#1F2023` | `#FFFFFF` |
+| Panel | `#292A2E` | `#EAEAEE` |
+| Selected control | `#303138` | `#E2E3E8` |
+| Hover | `#35363C` | `#EDEEF2` |
+| Border | `#383A40` | `#DDDEE4` |
+| Primary text | `#F1F1F3` | `#292A2E` |
+| Metadata | `#92949B` | `#636670` |
+| Focus / link accent | `#8794F5` | `#5B6EE1` |
+
+The workspace sidebar is 280pt wide with 34pt rows and neutral filled selection. A 46pt context strip sits in the shell above the 52pt document header. The header and editor share a separate 12pt rounded panel with a complete hairline outline, an 8pt right inset, and the 28pt status strip outside it below. Hiding the sidebar adds an 8pt left inset. The strip shows the current document; the app still opens one document at a time. Chrome controls use 30pt targets, 8pt corners, and accessible names; sidebar rows support keyboard activation. Cards and popovers use 11pt corners and quiet borders. Document titles use 30px semibold system type; body text retains a comfortable 15px size and 1.65 line height. Reading and Source omit the formatting toolbar. Read-only metadata remains fully legible. Sidebar transitions respect Reduce Motion.
+
+Native palettes live in `Sources/LinearNotes/ContentView.swift`; editor palettes live in `Editor/src/editor.css`, copied into bundled resources by the editor build. Update both together. Storage, autosave, conflict recovery, bookmarks, pins, and drag behaviour retain their existing implementation.
+
+### Details sidebar and contextual formatting — 1 October 2026
+
+The right details sidebar is a 280pt shell surface with a header close button and a toggle in the document header. It starts closed; `⌘⌥\` toggles it. With both sidebars open the minimum window width is 1100pt so the document and its controls remain usable. Expanded properties use labelled rows, including indented values, with editing through the existing full property dialog. Complex property syntax remains available verbatim in that dialog. Document mode, word count, save status, relative file path, bookmark, pin, and Finder actions also live here. No persistent note metadata is added for the panel.
+
+The fixed formatting bar is removed from all modes. Highlighted text in Live Preview opens the floating toolbar with text styles, bold, italic, strikethrough, underline, links, blockquotes, inline/block code, and lists. Slash commands use a compact grouped menu with shortcut hints and keyboard navigation. Both menus fit the editor viewport; formatting preserves the selection. Reading and Source do not expose editable floating formatting. The existing macOS Format menu and keyboard shortcuts remain available.
+
+Possible later sidebar additions: a heading outline for long documents, related-note links, and per-note reading information. These are ideas, not shipped features.
 
 ### What to take from the references
 

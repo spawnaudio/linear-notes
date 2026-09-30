@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 if [[ -d /Applications/Xcode-beta.app ]]; then export DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer; fi
 if [[ "${1:-}" == "--editor" ]]; then (cd Editor && npm ci --no-audit --no-fund && npm run build); fi
 swift build -c release --scratch-path .build
-APP="dist/Linear Notes.app"
+APP="dist/Linear Notes v1.2.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/LinearNotes "$APP/Contents/MacOS/LinearNotes"
 cp -R .build/release/LinearNotes_LinearNotes.bundle "$APP/Contents/Resources/"

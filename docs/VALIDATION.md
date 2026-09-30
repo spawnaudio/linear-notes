@@ -24,3 +24,35 @@ The computer-use clipboard helper timed out once without changing the file. Ente
 ## Not established by these checks
 
 Full accessibility coverage, native drag-and-drop across every layout, performance on large folders, network-drive coordination, simultaneous edits in another app, signing with a Developer ID, notarization, installation on another Mac, and an iOS host have not been validated. The app currently targets the architecture of the Mac on which it is built.
+
+
+## Desktop design redesign — 1 October 2026
+
+- All 8 storage tests passed; the redesign leaves the storage implementation unchanged.
+- All 15 editor tests passed, including a new check for metadata and semantic callout contrast in light/dark appearance, legible read-only properties, and removal of formatting chrome in Reading/Source without rewriting Markdown.
+- The release app built and passed local signature verification. The bundled stylesheet was compared with the editor source.
+- Inspected the native dark shell, Live Preview, Source, and Reading, including Reading at 820 × 620. A temporary copy of the example notebook was used. Native source editing/save was not established by this walkthrough; editing and persistence are covered separately by editor and storage tests.
+- Native light appearance was not established by the attempted per-process override; light editor rendering and contrast were verified in browser tests. Full accessibility and native drag-and-drop coverage remain unverified.
+
+The app is built at `dist/Linear Notes.app`. The native dark preview is `artifacts/redesign-native-dark.png`.
+
+
+### Window shell correction — 1 October 2026
+
+Compared the native preview with the supplied Linear screenshot. The context strip now belongs to the dark shell. The document header/editor/error region is a separately clipped 12pt rounded panel with a full hairline border and an 8pt right inset; the status strip sits below it in the shell. Removed the sidebar's continuous vertical divider and the status-bar divider. Window background follows the shell palette and the native titlebar separator is hidden. Release build and local signature verification passed; inspected all four panel corners in the native capture. No storage or editor behaviour changed.
+
+
+### Right sidebar and floating formatting — 1 October 2026
+
+- 17 browser tests passed, including selection-preserving floating bold/underline, narrow-window toolbar bounds, grouped slash shortcuts and dismissal, native-host property previews, nested property content, and property edits from Source mode.
+- 8 storage tests passed. Release packaging and local signature verification passed.
+- In a uniquely named temporary native preview, opened, closed, and reopened the details sidebar; inspected the labelled property rows, modes, word count, save state, file path, bookmark/pin/Finder actions; confirmed property editing is disabled in Reading and enabled in Source; opened the property editor from Source. Used a temporary notebook, leaving the existing app instance alone.
+- Inspected screenshots of the native sidebar, floating formatting, and slash menu. The fixed formatting toolbar is absent from source and bundled editor HTML. Full accessibility and all native drag interactions remain unverified.
+
+
+### Linear Notes v1.2 installation — 1 October 2026
+
+- Final release rebuilt as `dist/Linear Notes v1.2.app` with bundle version 1.2.0 (build 2).
+- Installed at `/Applications/Linear Notes v1.2.app`; local signature verification passed.
+- Installed executable hash matches the release executable. Installed editor JavaScript, CSS, and HTML match the bundled sources; the fixed formatting toolbar is absent.
+- Launched the installed app and verified its running executable comes from that exact Applications path.

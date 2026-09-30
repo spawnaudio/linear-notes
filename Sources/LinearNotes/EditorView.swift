@@ -14,6 +14,14 @@ import WebKit
         case "ready": ready = true; update()
         case "change": if let text = data["markdown"] as? String, let id = data["id"] as? String { store.changed(text, id: id) }
         case "save": store.save()
+        case "properties":
+            if data["id"] as? String == store.selected {
+                store.properties = data["text"] as? String ?? ""
+                store.propertyRows = (data["rows"] as? [[String: String]] ?? []).compactMap { row in
+                    guard let name = row["name"], let value = row["value"] else { return nil }
+                    return (name: name, value: value)
+                }
+            }
         case "stats": if data["id"] as? String == store.selected { store.words = data["words"] as? Int ?? 0 }
         case "openLink":
             if let raw = data["url"] as? String, let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? "") { NSWorkspace.shared.open(url) }
@@ -32,6 +40,9 @@ import WebKit
             loadedMode = store.mode
             webView.callAsyncJavaScript("window.notes.setMode(mode)", arguments: ["mode": store.mode.rawValue], in: nil, in: .page, completionHandler: nil)
         }
+    }
+    func showProperties() {
+        webView?.evaluateJavaScript("window.notes.properties()", completionHandler: nil)
     }
     func command(_ name: String) {
         webView?.callAsyncJavaScript("window.notes.command(command)", arguments: ["command": name], in: nil, in: .page, completionHandler: nil)
