@@ -43,7 +43,7 @@ struct QuickOpenView: View {
                     LazyVStack(spacing: 3) {
                         ForEach(Array(store.searchResults.enumerated()), id: \.element.id) { entry in
                             Button { index = entry.offset; open() } label: { SearchResultRow(result: entry.element, query: store.query) }
-                                .buttonStyle(.plain).background(index == entry.offset ? Palette.control : .clear, in: RoundedRectangle(cornerRadius: 8)).id(entry.offset)
+                                .buttonStyle(.plain).background(index == entry.offset ? Palette.control : .clear, in: RoundedRectangle(cornerRadius: 8)).id(entry.offset).accessibilityAddTraits(index == entry.offset ? .isSelected : [])
                         }
                         if store.searchResults.isEmpty { Text(store.searching ? "Searching…" : "No notes found").foregroundStyle(Palette.muted).padding(25) }
                     }
@@ -56,10 +56,11 @@ struct QuickOpenView: View {
         .onChange(of: store.searchResults.map(\.id)) { index = min(index, max(0, store.searchResults.count - 1)) }
         .onKeyPress(.downArrow) { index = min(index + 1, max(0, store.searchResults.count - 1)); return .handled }
         .onKeyPress(.upArrow) { index = max(0, index - 1); return .handled }
+        .onKeyPress(.return) { open(); return .handled }
         .onExitCommand { dismiss() }
     }
     private func open() {
         guard !store.searching, store.searchResults.indices.contains(index) else { return }
-        store.select(store.searchResults[index].id); dismiss()
+        store.openSearchResult(store.searchResults[index].id); dismiss()
     }
 }

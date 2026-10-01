@@ -71,3 +71,19 @@ Compared the native preview with the supplied Linear screenshot. The context str
 - Rebuilt v1.3 with `scripts/build.sh` and verified the packaged and installed signatures.
 - Replaced `/Applications/Linear Notes v1.2.app` with `/Applications/Linear Notes v1.3.app`; the installed bundle reports 1.3.0 and its executable SHA-256 matches the packaged build.
 - Launched the installed executable and verified a registered on-screen native window. macOS was locked during installation, so accessibility inspection and a fresh screenshot of the installed window were unavailable. The earlier 35 passing checks and isolated native walkthrough apply to the same feature implementation; live Linear integration still requires a workspace key.
+
+## Capture, retrieval, and recovery — 1.3.1 · 1 October 2026
+
+- All **19 native tests** and **26 editor tests** pass. The new checks cover unique instant capture, save failures and conflict copies, recovery/session metadata and symlink rejection, relative note links across source/target/folder moves, rollback after a failed link rewrite, Unicode passage matching across formatting, per-mode cursor/scroll restoration, note-link keyboard activation, document scaling, slash/image controls, and print layout/state preservation. Native checks were rerun after the print-sheet correction.
+- The release bundle reports **1.3.1** (build 4), retaining **Linear Notes v1.3.app**. Release packaging and local signature verification pass. The editor source and packaged resources match.
+- A separate QA bundle and temporary notebook verified native instant capture/typing with saved Markdown, passage search and Return activation in the quick switcher, labelled find controls and a 1/1 count, and selection/scroll at the matching passage. Source mode, selection, and scroll survived quitting and reopening.
+- Seeded unsaved recovery metadata was reopened in the native app: the recovered text appeared in a separate “Recovered” note and the original file stayed byte-for-byte unchanged. This verifies recovery from a stored draft, not every possible crash timing before the native host receives an edit.
+- The initial synchronous print operation produced three blank pages. Deferring the operation until the WebKit callback completes and using a native asynchronous print sheet fixed it. The final native PDF contains **3 pages and 1,298 text characters**, including the final matching passage, without editor controls. Returning from export restored Live Preview and the previous scroll position. The browser print test independently verifies light print colours, hidden controls, PDF output, and Source-mode restoration.
+- The existing Linear palette, shell dimensions, spacing, and default document font sizes are retained; new controls reuse existing popover styling and appear when invoked. Accessible names/roles and keyboard interactions were inspected or tested, but a full VoiceOver usability audit remains unverified.
+- Very large notebooks, every Markdown link edge case, multi-device editing, distribution signing/notarization, and live signed-in Linear import remain unverified. Recovery is local draft protection, not history, sync, or a backup.
+
+### Installed replacement — 1.3.1
+
+- Replaced `/Applications/Linear Notes v1.3.app` in place. The installed bundle reports **1.3.1** (build 4) and passes local signature verification.
+- Installed executable SHA-256 is `378b353920e65948d967c25079d4f92bd9c32054178ac68809d92fbf7b58aa62`; it matches the packaged executable. Installed editor JS/CSS/HTML also match the release bundle.
+- Launched the replacement from that exact Applications path and verified its running executable and accessible native window. Personal notebook contents were not used for QA edits.

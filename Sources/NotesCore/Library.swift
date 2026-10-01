@@ -35,7 +35,7 @@ public struct SidebarState: Codable, Equatable, Sendable {
     }
 }
 
-public enum LibraryError: LocalizedError {
+public enum LibraryError: LocalizedError, Equatable {
     case invalidPath, invalidName, exists, conflict, unsupportedEncoding, folderCycle, invalidImage, attachmentFolder
     public var errorDescription: String? {
         switch self {
@@ -253,15 +253,25 @@ public final class NoteLibrary {
             if path == "Attachments", try fm.contentsOfDirectory(at: url(for: path), includingPropertiesForKeys: nil).contains(where: { UUID(uuidString: $0.deletingPathExtension().lastPathComponent) != nil && ["png", "jpg", "gif", "webp"].contains($0.pathExtension.lowercased()) }) { throw LibraryError.attachmentFolder }
             let destination = try url(for: target)
             guard !fm.fileExists(atPath: destination.path) else { throw LibraryError.exists }
-            let notes = try scan().filter { !$0.isFolder && ($0.path == path || $0.path.hasPrefix(path + "/")) }
+            let notes = try scan().filter { !$0.isFolder }
             let rewrites = try notes.map { note in
-                let next = target + note.path.dropFirst(path.count)
+                let next = note.path == path || note.path.hasPrefix(path + "/") ? target + note.path.dropFirst(path.count) : note.path
                 let text = try read(note.path)
-                return (next, text, rebaseAttachments(text, from: note.path, to: next))
+                return (next, text, rebaseLinks(text, from: note.path, to: next, moved: path, target: target))
             }
             try fm.moveItem(at: url(for: path), to: destination)
+            var written: [(String, String, String)] = []
+            do {
+                for (next, original, updated) in rewrites where original != updated {
+                    try save(updated, to: next, expected: original); written.append((next, original, updated))
+                }
+            } catch {
+                // Roll back only our own edits; coordinated saves preserve concurrent external writes.
+                for (next, original, updated) in written.reversed() { try? save(original, to: next, expected: updated) }
+                try? fm.moveItem(at: destination, to: url(for: path))
+                throw error
+            }
             sidebar.remap(path, to: target)
-            for (next, original, updated) in rewrites where original != updated { try save(updated, to: next, expected: original) }
         }
         sidebar.order[oldParent] = sidebar.order[oldParent, default: []].filter { $0 != path && $0 != target }
         var siblings = sidebar.order[parent, default: []].filter { $0 != target }
@@ -271,32 +281,4 @@ public final class NoteLibrary {
         return target
     }
 
-    private func rebaseAttachments(_ text: String, from old: String, to next: String) -> String {
-        let pattern = #"!\[(?:\\.|[^\]\\])*\]\((?:<([^>\n]+)>|([^\s)]+))(?:\s+\"[^\"]*\")?\)"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
-        let inlineCode = try! NSRegularExpression(pattern: #"(`+).*?\1"#)
-        var output = "", fence: String?
-        for line in text.components(separatedBy: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") {
-                let marker = String(trimmed.prefix(3)); fence = fence == marker ? nil : (fence ?? marker)
-                output += line + "\n"; continue
-            }
-            var revised = line
-            if fence == nil {
-                let code = inlineCode.matches(in: line, range: NSRange(line.startIndex..., in: line))
-                for match in regex.matches(in: line, range: NSRange(line.startIndex..., in: line)).reversed() {
-                    guard !code.contains(where: { NSIntersectionRange($0.range, match.range).length > 0 }) else { continue }
-                    let capture = match.range(at: match.range(at: 1).location == NSNotFound ? 2 : 1)
-                    guard let range = Range(capture, in: revised),
-                          let image = try? imageURL(String(revised[range]), in: old), image.deletingLastPathComponent().path == root.appendingPathComponent("Attachments").path,
-                          UUID(uuidString: image.deletingPathExtension().lastPathComponent) != nil else { continue }
-                    let prefix = String(repeating: "../", count: NoteItem(path: next, isFolder: false).parent.split(separator: "/").count)
-                    revised.replaceSubrange(range, with: prefix + "Attachments/" + image.lastPathComponent)
-                }
-            }
-            output += revised + "\n"
-        }
-        return String(output.dropLast())
-    }
 }

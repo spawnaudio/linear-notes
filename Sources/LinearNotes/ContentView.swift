@@ -26,12 +26,14 @@ enum Palette {
 
 struct ChromeButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var enabled
+    @Environment(\.isFocused) private var focused
     @State private var hovering = false
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .frame(minWidth: 30, minHeight: 30)
             .background(configuration.isPressed ? Palette.control : hovering && enabled ? Palette.hover : .clear, in: RoundedRectangle(cornerRadius: 8))
             .opacity(enabled ? 1 : 0.5)
+            .overlay { RoundedRectangle(cornerRadius: 8).stroke(focused ? Palette.accent : .clear, lineWidth: 2) }
             .onHover { hovering = $0 }
     }
 }
@@ -53,6 +55,7 @@ struct ContentView: View {
                             Text(error).font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
                             Spacer(minLength: 0)
                             if store.conflict { Button("Keep both", action: store.keepBoth).buttonStyle(.bordered) }
+                            else if store.saveFailed { Button("Retry") { store.bridge?.flush { _ in } }.buttonStyle(.bordered) }
                             else { Button { store.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(ChromeButtonStyle()).accessibilityLabel("Dismiss error") }
                         }.padding(12).background(Color.orange.opacity(0.07))
                     }
@@ -122,7 +125,7 @@ struct ContentView: View {
                     } else {
                         sectionLabel("Search results")
                         ForEach(store.searchResults) { result in
-                            Button { store.select(result.id) } label: { SearchResultRow(result: result, query: store.query) }.buttonStyle(.plain)
+                            Button { store.openSearchResult(result.id) } label: { SearchResultRow(result: result, query: store.query) }.buttonStyle(.plain)
                                 .background(store.selected == result.id ? Palette.control : .clear, in: RoundedRectangle(cornerRadius: 8))
                         }
                         if let error = store.searchError { Text(error).font(.system(size: 12)).foregroundStyle(.orange).padding(10) }
@@ -136,7 +139,7 @@ struct ContentView: View {
                 Text("On your Mac").font(.system(size: 10))
                 Spacer()
                 Menu {
-                    Button("New note…") { store.create() }
+                    Button("New note") { store.create() }
                     Button("New folder…") { store.create(folder: true) }
                     Divider(); Button("Open folder…", action: store.chooseFolder)
                 } label: { Image(systemName: "plus").font(.system(size: 14)) }.menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 30, height: 30).accessibilityLabel("New note or folder").help("New note or folder")
@@ -313,7 +316,7 @@ struct ContentView: View {
     var statusbar: some View {
         HStack(spacing: 6) {
             if store.selected != nil {
-                Circle().fill(store.conflict ? Color.orange : Color.green).frame(width: 4, height: 4)
+                Circle().fill(store.conflict || store.saveFailed ? Color.orange : Color.green).frame(width: 4, height: 4)
                 Text(store.status)
                 Spacer()
                 Text("\(store.words) words"); Text("·").padding(.horizontal, 3); Text("Markdown")
@@ -340,6 +343,7 @@ struct SidebarRow: View {
     let bookmark: Bool
     @State private var hovering = false
     @State private var dropEdge: Int? = nil
+    @FocusState private var focused: Bool
     var body: some View {
         HStack(spacing: 7) {
             if item.isFolder && !bookmark {
@@ -354,15 +358,18 @@ struct SidebarRow: View {
             .overlay(alignment: dropEdge == -1 ? .top : .bottom) { if let edge = dropEdge, edge != 0 { Rectangle().fill(Palette.accent).frame(height: 2) } }
             .overlay { if dropEdge == 0 { RoundedRectangle(cornerRadius: 8).stroke(Palette.accent, lineWidth: 1) } }
             .contentShape(Rectangle()).onTapGesture { store.select(item.path) }.onHover { hovering = $0 }
-            .focusable().onKeyPress(.return) { store.select(item.path); return .handled }
+            .focusable().focused($focused).onKeyPress(.return) { store.select(item.path); return .handled }
+            .onKeyPress(.space) { store.select(item.path); return .handled }
+            .overlay { RoundedRectangle(cornerRadius: 8).stroke(focused ? Palette.accent : .clear, lineWidth: 2) }
             .accessibilityAction { store.select(item.path) }
             .accessibilityAddTraits(store.selected == item.path ? .isSelected : [])
             .accessibilityElement(children: .combine).accessibilityAddTraits(.isButton)
+            .accessibilityLabel(item.title).accessibilityValue(item.isFolder ? (store.isExpanded(item.path) ? "Expanded folder" : "Collapsed folder") : (store.selected == item.path ? "Selected note" : "Note"))
             .help(item.path)
             .onDrag { NSItemProvider(object: item.path as NSString) }
             .onDrop(of: [.text], delegate: NoteDropDelegate(store: store, item: item, bookmark: bookmark, edge: $dropEdge))
             .contextMenu {
-                if item.isFolder { Button("New note here…") { store.create(parent: item.path) }; Button("New folder here…") { store.create(folder: true, parent: item.path) }; Divider() }
+                if item.isFolder { Button("New note here") { store.create(parent: item.path) }; Button("New folder here…") { store.create(folder: true, parent: item.path) }; Divider() }
                 Button(store.isPinned(item.path) ? "Unpin" : "Pin to top of folder") { store.togglePin(item.path) }
                 Button(store.isBookmarked(item.path) ? "Remove bookmark" : "Bookmark") { store.toggleBookmark(item.path) }
                 Divider(); Button("Rename…") { store.rename(item) }; Button("Show in Finder") { store.reveal(item.path) }

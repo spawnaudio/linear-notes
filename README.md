@@ -19,12 +19,18 @@ Requires macOS 15 or later. This is a locally signed MVP, not a notarized distri
 - Pasted URL chooser: Markdown link or rich card. A card selects on the first click and opens on the second. Enter opens a selected card; Delete removes it in editing mode.
 - YAML frontmatter displayed as compact property pills; click a pill to edit the YAML. Nested structures remain in the file, with top-level fields shown as pills.
 - Native sidebar with folders, content search with matching excerpts, drag sorting, pins within each parent folder, and a separate bookmark section.
+- Instant **⌘N** capture into a unique Untitled note, ready to type; rename it later.
+- Find within a document with **⌘F**, match highlighting/counts, and next/previous navigation in all three modes. Library search results jump to the matching passage.
+- Remembered mode, cursor/selection, and scroll position for each note.
+- Relative Markdown links to other notes from the existing link dialog; open inside the app and update when notes/folders move or rename through the app.
+- Native **File → Print / Save as PDF…**, with a clean document layout.
+- Document text sizing in View, visible keyboard focus, and labelled editor controls.
 - Quick note switching with **⌘P**, arrow keys, and Enter. **⌘K** still inserts a link.
 - Clickable heading outline in the existing right details sidebar, with the current section highlighted in Live Preview and Reading.
 - Paste, drop, or insert PNG/JPEG/GIF/WebP images; replace, remove, and edit alt text in Live Preview.
 - Optional read-only Linear project browser and document import, using a personal API key stored in macOS Keychain.
 - Animated sidebar collapse, system light/dark appearance, native file dialogs, and Finder/Trash actions.
-- Automatic local saving, external change detection, and a **Keep both** action for conflicting drafts.
+- Automatic local saving, separate recovered copies of unsaved drafts after an unexpected exit, **Retry** for save failures, and **Keep both** for conflicting drafts.
 
 ## Organise notes
 
@@ -40,6 +46,9 @@ Right-click an item for pin, bookmark, rename, new child items, and Trash action
 | Strikethrough / inline code | ⌘⇧S / ⌘E |
 | Link or card | ⌘K |
 | Find and switch notes | ⌘P, then ↑ / ↓ and Return |
+| Find within document | ⌘F; Return / ⇧Return for next / previous |
+| Print / Save as PDF | ⌘⇧P |
+| Larger / smaller / default document text | ⌘+ / ⌘− / ⌘0 |
 | Headings 1–4 | ⌘⌥1–4 |
 | Checklist / bullets / numbers | ⌘⇧7 / ⌘⇧8 / ⌘⇧9 |
 | Code block | ⌘⇧\\ |
@@ -60,7 +69,11 @@ Imported remote images retain their URLs and require a connection. Images hosted
 
 Notes are UTF-8 files, saved with coordinated atomic replacement. Reading, switching modes, and opening documents do not rewrite their contents. Live edits use Tiptap's Markdown serializer, which can normalise whitespace and equivalent Markdown syntax. Source edits preserve the exact text you enter.
 
-Sidebar preferences are separate in `.linear-notes/sidebar.json` inside the notes folder. They never become note frontmatter. Removing that metadata resets organisation preferences without removing notes.
+Sidebar preferences, reading positions, and unsaved draft recovery live separately in the hidden `.linear-notes` folder. They never become note frontmatter. An unexpected exit restores unsaved work as separate “Recovered” notes, preserving original files and external edits. Recovery is not version history.
+
+Back up or transfer the **whole notebook folder**, including `Attachments` and `.linear-notes`, using Time Machine or a copy on another drive. **Help → Backing Up and Recovering Notes** explains recovery and Finder’s Trash.
+
+In the link dialog, search for another note or enter a relative `.md` / `.markdown` reference. In Reading, click or press Return to open a note link; in Live Preview, use ⌘click or ⌘Return. Standard inline links and reference definitions are updated when you move or rename notes through the app. Manually moving files in Finder does not update links.
 
 Rich cards remain valid Markdown links: `[Title](<https://example.com> "card")`. Other readers display a normal link. Callouts use `> [!NOTE]`, `> [!TIP]`, `> [!WARNING]`, and other named types. Click the callout icon to choose a colour and icon/emoji. Custom styling is stored in a small HTML comment on the callout header; existing titles and fold markers remain. Other Markdown readers can ignore that comment and retain the callout content. Underline uses the editor's `++underlined++` extension; support varies between Markdown readers.
 

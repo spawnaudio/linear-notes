@@ -2,6 +2,30 @@
 
 This document records feature-set changes and additions after the original product outline. The original outline remains in [Linear Notes - v1.0 Ideation](<Linear Notes - v1.0 Ideation.md>).
 
+## 1.3.1 — Capture, retrieval, and recovery · 1 October 2026
+
+### Added / Changed / Fixed
+
+- Instant `⌘N` capture creates a unique Untitled note and focuses the editor; folders retain their naming dialog.
+- `⌘F` finds passages in Live Preview, Reading, and Source with counts and next/previous navigation. Library search jumps to the matching passage.
+- Per-note mode, selection, and scroll resume from separate notebook metadata.
+- Unsaved draft recovery creates separate copies after an unexpected exit. Save failures offer Retry; external edit conflicts retain Keep both.
+- View commands resize document text without changing the default Linear typography. Improved focus indicators, labels, slash-menu navigation, and image-tool keyboard access.
+- Relative Markdown note links use the existing link dialog and open inside the app. App-managed moves/renames update incoming and outgoing note links alongside managed attachments; code examples remain verbatim.
+- Native Print / Save as PDF (`⌘⇧P`) prints a clean document and restores the editing position. Help includes whole-notebook backup and recovery guidance.
+- Preserved the existing Linear shell, colours, spacing, and default document sizes. Packaged version **1.3.1** (build 4) keeps the installed name **Linear Notes v1.3.app**.
+
+### Validation
+
+- **19 native tests** and **26 editor tests** pass. Added checks cover capture collisions, save failures/conflicts, separate recovered drafts, session metadata, secure note links, move rollback, passage matching across formatting and Unicode, mode/position restoration, keyboard controls, text sizing, and clean print output.
+- Release packaging and local signature verification pass. Native QA results are recorded in `VALIDATION.md`.
+
+### Limits
+
+- Full VoiceOver usability and very large notebook performance remain unverified. Local recovery protects drafts received by the native host and does not provide revision history or independent backups.
+- Note-link rewriting supports standard inline Markdown links and reference definitions. Wikilinks and arbitrary HTML links remain outside this version.
+- Live Linear import remains unverified against a signed-in workspace; this release does not add sync, collaboration, or an iOS host.
+
 ## 1.3.0 — Images, finding notes, and Linear import · 1 October 2026
 
 ### Added / Changed / Fixed

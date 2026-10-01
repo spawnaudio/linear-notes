@@ -8,6 +8,7 @@ let package = Package(
     targets: [
         .target(name: "NotesCore"),
         .executableTarget(name: "LinearNotes", dependencies: ["NotesCore"], resources: [.copy("Resources/Editor")]),
-        .testTarget(name: "NotesCoreTests", dependencies: ["NotesCore"])
+        .testTarget(name: "NotesCoreTests", dependencies: ["NotesCore"]),
+        .testTarget(name: "LinearNotesTests", dependencies: ["LinearNotes"])
     ]
 )

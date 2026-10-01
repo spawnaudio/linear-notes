@@ -8,6 +8,13 @@
   <link rel="stylesheet" href="editor.css">
 </head>
 <body>
+  <div id="find" class="popover" role="search" aria-label="Find in document" hidden>
+    <input id="find-text" aria-label="Find text" placeholder="Find in this note…">
+    <span id="find-count" role="status" aria-live="polite"></span>
+    <button id="find-previous" aria-label="Previous match" title="Previous match · ⇧Enter">↑</button>
+    <button id="find-next" aria-label="Next match" title="Next match · Enter">↓</button>
+    <button id="find-close" aria-label="Close find" title="Close · Escape">×</button>
+  </div>
   <main id="page">
     <div id="properties" aria-label="Document properties"></div>
     <div id="editor"></div>
@@ -61,8 +68,10 @@
   <dialog id="link-dialog">
     <form method="dialog" id="link-form">
       <h2>Add a link</h2><p>Insert an inline link or a resource card.</p>
-      <label>URL<input id="link-url" type="url" required placeholder="https://…"></label>
+      <label>URL or note link<input id="link-url" required placeholder="https://…"></label>
       <label>Display text<input id="link-title" placeholder="A helpful title"></label>
+      <label>Link to a note<input id="note-query" placeholder="Search notes…" autocomplete="off"></label>
+      <div id="note-links" aria-label="Matching notes"></div>
       <div class="dialog-actions"><button value="cancel" formnovalidate>Cancel</button><button value="link">Markdown link</button><button value="card" class="primary">Rich card</button></div>
     </form>
   </dialog>
