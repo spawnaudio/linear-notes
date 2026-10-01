@@ -137,7 +137,7 @@ struct LinearImportView: View {
 
     private func importDocument() {
         guard let project, let preview, let content = preview.content, let library = store.library, library.root == root else { error = "Choose a notes folder before importing."; return }
-        store.bridge?.flush { success in
+        store.flushAll { success in
             guard success else { error = store.error; return }
             guard store.library?.root == library.root else { error = "The notes folder changed. Reopen import to choose its destination."; return }
             do {

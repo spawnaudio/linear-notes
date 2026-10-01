@@ -16,6 +16,8 @@ import AppKit
             CommandGroup(replacing: .newItem) {
                 Button("New Note") { store.create() }.keyboardShortcut("n")
                 Button("New Folder…") { store.create(folder: true) }.keyboardShortcut("n", modifiers: [.command, .shift])
+                Button("New Tab") { store.newTab() }.keyboardShortcut("t").disabled(store.library == nil)
+                Button("Close Tab") { store.closeTab(store.activeTab, in: store.activePane) }.keyboardShortcut("w")
                 Divider(); Button("Open Notes Folder…", action: store.chooseFolder).keyboardShortcut("o")
                 Button("Import from Linear…") { store.linearImportVisible = true }.disabled(store.library == nil)
             }
@@ -48,6 +50,12 @@ import AppKit
                 Button("Find a Note…") { store.quickOpenVisible = true }.keyboardShortcut("p")
                 Button("Toggle Sidebar") { store.sidebarVisible.toggle() }.keyboardShortcut("\\")
                 Button("Toggle Details Sidebar") { store.inspectorVisible.toggle() }.keyboardShortcut("\\", modifiers: [.command, .option])
+                Divider()
+                Button("Split Right") { store.split(.right) }.keyboardShortcut(.rightArrow, modifiers: [.command, .option]).disabled(store.library == nil)
+                Button("Split Down") { store.split(.down) }.keyboardShortcut(.downArrow, modifiers: [.command, .option]).disabled(store.library == nil)
+                Button("Next Tab") { store.cycleTab(1) }.keyboardShortcut(.tab, modifiers: [.control])
+                Button("Previous Tab") { store.cycleTab(-1) }.keyboardShortcut(.tab, modifiers: [.control, .shift])
+                Button("Close Pane") { store.closePane(store.activePane) }.disabled(store.panes.count == 1)
                 Divider()
                 Button("Live Preview") { store.mode = .live }.keyboardShortcut("1", modifiers: [.command, .control])
                 Button("Reading Mode") { store.mode = .reading }.keyboardShortcut("2", modifiers: [.command, .control])
@@ -87,14 +95,14 @@ import AppKit
         }
     }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let bridge = store?.bridge else { return .terminateNow }
-        bridge.flush { success in sender.reply(toApplicationShouldTerminate: success) }
+        guard let store else { return .terminateNow }
+        store.flushAll { success in sender.reply(toApplicationShouldTerminate: success) }
         return .terminateLater
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         if canClose { return true }
-        guard let bridge = store?.bridge else { return true }
-        bridge.flush { [weak self, weak sender] success in
+        guard let store else { return true }
+        store.flushAll { [weak self, weak sender] success in
             if success { self?.canClose = true; sender?.close(); self?.canClose = false }
         }
         return false

@@ -12,6 +12,8 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view';
 
 const $ = id => document.getElementById(id);
 const send = (type, payload = {}) => window.webkit?.messageHandlers?.notes?.postMessage({ type, ...payload });
+window.addEventListener('pointerdown', () => send('focus', { id: documentID }));
+window.addEventListener('focusin', () => send('focus', { id: documentID }));
 let documentID = '', currentMarkdown = '', frontmatter = '', mode = 'live', loading = false, assetBase = '';
 let editor, slashRange = null, slashIndex = 0, slashMatches = [], linkRange = null;
 let calloutPosition = null, calloutColour = '', imageAltPosition = null, uploadRange = null, imageRequest = 0, activeHeading = -1;
