@@ -7,6 +7,8 @@ import TaskItem from '@tiptap/extension-task-item';
 import { TableKit } from '@tiptap/extension-table';
 import Image from '@tiptap/extension-image';
 import Paragraph from '@tiptap/extension-paragraph';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 
 const $ = id => document.getElementById(id);
 const send = (type, payload = {}) => window.webkit?.messageHandlers?.notes?.postMessage({ type, ...payload });
@@ -14,8 +16,89 @@ let documentID = '', currentMarkdown = '', frontmatter = '', mode = 'live', load
 let editor, slashRange = null, slashIndex = 0, slashMatches = [], linkRange = null;
 let calloutPosition = null, calloutColour = '', imageAltPosition = null, uploadRange = null, imageRequest = 0, activeHeading = -1;
 const imageRequests = new Map();
+let noteLinks = [], positions = {}, viewTimer, printing = false;
+let findMatches = [], findIndex = 0;
+const FindHighlights = Extension.create({
+  name: 'findHighlights',
+  addProseMirrorPlugins() { return [new Plugin({ key: new PluginKey('findHighlights'), props: {
+    decorations(state) { return mode === 'source' || $('find').hidden ? null : DecorationSet.create(state.doc,
+      findMatches.map((match, index) => Decoration.inline(match.from, match.to, { class: index === findIndex ? 'find-match find-current' : 'find-match' }))); }
+  } })]; }
+});
+function folded(text) {
+  let value = '', starts = [], ends = [], offset = 0;
+  for (const character of text) {
+    const part = character.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase();
+    for (let index = 0; index < part.length; index++) { starts.push(offset); ends.push(offset + character.length); }
+    if (!part && ends.length) ends[ends.length - 1] = offset + character.length;
+    value += part; offset += character.length;
+  }
+  return { value, starts, ends };
+}
+function refreshFind(jump = false) {
+  const term = folded($('find-text').value.trim()).value;
+  findMatches = [];
+  const collect = (text, base) => {
+    const haystack = folded(text);
+    for (let index = 0; term && (index = haystack.value.indexOf(term, index)) !== -1; index += term.length) {
+      findMatches.push({ from: base + haystack.starts[index], to: base + haystack.ends[index + term.length - 1] });
+    }
+  };
+  if (!$('find').hidden && term) {
+    if (mode === 'source') collect(currentMarkdown, 0);
+    else editor.state.doc.descendants((node, pos) => { if (node.isTextblock) { collect(node.textBetween(0, node.content.size, '\n', '\ufffc'), pos + 1); return false; } });
+  }
+  findIndex = Math.min(findIndex, Math.max(0, findMatches.length - 1));
+  $('find-count').textContent = `${findMatches.length ? findIndex + 1 : 0} / ${findMatches.length}`;
+  $('find-next').disabled = $('find-previous').disabled = !findMatches.length;
+  editor.view.dispatch(editor.state.tr.setMeta('find', true));
+  if (jump) jumpToMatch();
+}
+function jumpToMatch() {
+  const match = findMatches[findIndex]; if (!match) return;
+  if (mode === 'source') {
+    $('source').setSelectionRange(match.from, match.to);
+    const line = currentMarkdown.slice(0, match.from).split('\n').length - 1;
+    window.scrollTo(0, $('source').offsetTop + line * parseFloat(getComputedStyle($('source')).lineHeight) - innerHeight / 3);
+  } else {
+    editor.commands.setTextSelection(match);
+    const rect = editor.view.coordsAtPos(match.from);
+    window.scrollTo(0, window.scrollY + rect.top - innerHeight / 3);
+  }
+}
+function showFind(term, focus = true) {
+  $('find').hidden = false; $('bubble').hidden = true; hideSlash();
+  if (typeof term === 'string') $('find-text').value = term;
+  findIndex = 0; refreshFind(true);
+  if (focus) { $('find-text').focus(); $('find-text').select(); }
+}
+function closeFind() { $('find').hidden = true; refreshFind(); if (mode !== 'reading') window.notes.focus(); }
+$('find-text').oninput = () => { findIndex = 0; refreshFind(true); };
+function nextMatch(direction) { if (findMatches.length) { findIndex = (findIndex + direction + findMatches.length) % findMatches.length; refreshFind(true); } }
+$('find-next').onclick = () => nextMatch(1); $('find-previous').onclick = () => nextMatch(-1); $('find-close').onclick = closeFind;
+$('find').onkeydown = event => {
+  if (event.key === 'Enter') { event.preventDefault(); nextMatch(event.shiftKey ? -1 : 1); }
+  if (event.key === 'Escape') { event.preventDefault(); closeFind(); }
+};
+function viewState() {
+  const selection = mode === 'source' ? { from: $('source').selectionStart, to: $('source').selectionEnd } : editor.state.selection;
+  positions[mode] = { from: selection.from, to: selection.to, scroll: window.scrollY };
+  return { mode, positions };
+}
+function reportView() { clearTimeout(viewTimer); if (!loading && !printing) viewTimer = setTimeout(() => send('viewState', { id: documentID, state: viewState() }), 100); }
+function restorePosition(position) {
+  const size = mode === 'source' ? currentMarkdown.length : editor.state.doc.content.size;
+  const clamp = value => Math.min(size, Math.max(mode === 'source' ? 0 : 1, Number.isFinite(value) ? Math.trunc(value) : 1));
+  if (position) {
+    const from = clamp(position.from), to = Math.max(from, clamp(position.to));
+    if (mode === 'source') $('source').setSelectionRange(from, to); else editor.commands.setTextSelection({ from, to });
+  }
+  window.scrollTo(0, Number.isFinite(position?.scroll) ? Math.max(0, position.scroll) : 0);
+}
+function textSize(size) { document.documentElement.style.setProperty('--document-scale', String(Math.min(24, Math.max(12, Number(size) || 15)) / 15)); resizeSource(); }
 const webURL = value => { try { const u = new URL(value); return ['https:', 'http:'].includes(u.protocol) ? u.href : null; } catch { return null; } };
 const openURL = value => { const url = webURL(value); if (url) send('openLink', { url }); };
+const openReference = href => relativeNote(href) ? send('openNote', { id: documentID, reference: href }) : openURL(href);
 const escapeLabel = text => text.replace(/([\\\[\]])/g, '\\$1').replace(/\n/g, ' ');
 
 const Callout = Node.create({
@@ -150,7 +233,8 @@ const SafeImage = Image.extend({
     return `![${escapeLabel(node.attrs.alt || '')}](<${src}>${title})`;
   },
   addNodeView() { return ({ node, editor: ed, getPos }) => {
-    const dom = document.createElement('figure'); dom.className = 'note-image';
+    const dom = document.createElement('figure'); dom.className = 'note-image'; dom.tabIndex = 0;
+    dom.setAttribute('aria-label', 'Image; press Enter to show image actions');
     const image = document.createElement('img'); const fallback = document.createElement('div'); fallback.className = 'image-placeholder';
     const tools = document.createElement('div'); tools.className = 'image-tools'; tools.contentEditable = 'false';
     let current = node;
@@ -160,6 +244,10 @@ const SafeImage = Image.extend({
     button('Remove', () => { const pos = getPos(); ed.chain().focus().deleteRange({ from: pos, to: pos + current.nodeSize }).run(); });
     dom.append(image, fallback, tools);
     image.onclick = () => { if (mode === 'live') ed.commands.setNodeSelection(getPos()); };
+    dom.onkeydown = event => {
+      if (event.key === 'Enter' && event.target === dom && mode === 'live') { event.preventDefault(); ed.commands.setNodeSelection(getPos()); tools.querySelector('button').focus(); }
+      if (event.key === 'Escape') { event.preventDefault(); ed.commands.focus(); }
+    };
     const draw = next => {
       current = next; image.alt = next.attrs.alt || 'Image'; image.title = next.attrs.title || '';
       const src = imageURL(next.attrs.src); fallback.textContent = `Image unavailable · ${next.attrs.alt || next.attrs.src}`;
@@ -264,10 +352,10 @@ const LinearKeys = Extension.create({
 function makeEditor(markdown) {
   const instance = new Editor({
     element: $('editor'),
-    extensions: [StarterKit.configure({ paragraph: false, heading: { levels: [1, 2, 3, 4, 5, 6] }, link: { openOnClick: false, autolink: true }, trailingNode: false }), ImageParagraph, Markdown, Placeholder.configure({ placeholder: 'Start writing, or type / for commands…' }), TaskList, TaskItem.configure({ nested: true, HTMLAttributes: { 'data-type': 'taskItem' } }), TableKit, SafeImage.configure({ allowBase64: true }), Callout, RichLink, RawHTML, LinearKeys],
+    extensions: [StarterKit.configure({ paragraph: false, heading: { levels: [1, 2, 3, 4, 5, 6] }, link: { openOnClick: false, autolink: true, isAllowedUri: (url, context) => context.defaultValidate(url) || relativeNote(url) }, trailingNode: false }), ImageParagraph, Markdown, Placeholder.configure({ placeholder: 'Start writing, or type / for commands…' }), TaskList, TaskItem.configure({ nested: true, HTMLAttributes: { 'data-type': 'taskItem' } }), TableKit, SafeImage.configure({ allowBase64: true }), Callout, RichLink, RawHTML, LinearKeys, FindHighlights],
     content: markdown, contentType: 'markdown', editable: mode !== 'reading',
     editorProps: {
-      attributes: { 'aria-label': mode === 'reading' ? 'Read document' : 'Edit document', spellcheck: 'true' },
+      attributes: { 'aria-label': mode === 'reading' ? 'Read document' : 'Edit document', role: 'textbox', 'aria-multiline': 'true', spellcheck: 'true', tabindex: '0' },
       handlePaste(view, event) {
         if (mode !== 'live') return false;
         const image = Array.from(event.clipboardData?.files || []).find(file => file.type.startsWith('image/'));
@@ -292,7 +380,7 @@ function makeEditor(markdown) {
         return false;
       }
     },
-    onUpdate() { if (!loading) { currentMarkdown = frontmatter + instance.getMarkdown(); notifyChange(); updateSlash(); reportOutline(); } },
+    onUpdate() { if (!loading) { currentMarkdown = frontmatter + instance.getMarkdown(); notifyChange(); updateSlash(); reportOutline(); refreshFind(); reportView(); } },
     onTransaction({ transaction }) {
       for (const pending of imageRequests.values()) {
         if (pending.editor !== instance) continue;
@@ -301,7 +389,7 @@ function makeEditor(markdown) {
         if (pending.replace && mapped.deleted) pending.editor = null;
       }
     },
-    onSelectionUpdate() { if (!loading) { updateSlash(); updateBubble(); } }
+    onSelectionUpdate() { if (!loading) { updateSlash(); updateBubble(); reportView(); } }
   });
   return instance;
 }
@@ -343,29 +431,35 @@ function propertyRows() {
 }
 function reportStats() { send('properties', { id: documentID, text: propertiesText(), rows: propertyRows() }); const body = splitFrontmatter(currentMarkdown)[1]; send('stats', { id: documentID, words: body.trim().split(/\s+/).filter(Boolean).length }); }
 function loadDocument(payload) {
+  clearTimeout(viewTimer);
   loading = true; documentID = payload.id; currentMarkdown = payload.markdown; mode = payload.mode || 'live';
+  positions = payload.state?.positions || {}; noteLinks = payload.notes || []; $('find').hidden = true; findMatches = [];
   assetBase = payload.assetBase || ''; imageRequests.clear(); activeHeading = -1;
   for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close('cancel');
   [frontmatter] = splitFrontmatter(currentMarkdown);
   editor?.destroy(); $('editor').replaceChildren(); editor = makeEditor(splitFrontmatter(currentMarkdown)[1]);
-  applyMode(); hideSlash(); $('bubble').hidden = true; window.scrollTo(0, 0); loading = false; reportStats(); reportOutline();
+  applyMode(); hideSlash(); $('bubble').hidden = true; textSize(payload.textSize || 15); restorePosition(positions[mode]); loading = false; reportStats(); reportOutline();
+  if (payload.focus) editor.commands.focus('start'); if (payload.find) showFind(payload.find, false);
 }
 function applyMode() {
   document.body.dataset.mode = mode;
   $('source').hidden = mode !== 'source'; $('editor').hidden = mode === 'source';
   $('properties').hidden = mode === 'source';
   $('source').value = currentMarkdown; resizeSource(); editor.setEditable(mode === 'live', false); drawProperties();
+  editor.view.dom.setAttribute('aria-label', mode === 'reading' ? 'Read document' : 'Edit document');
+  editor.view.dom.setAttribute('aria-readonly', String(mode === 'reading'));
   document.querySelectorAll('input[type=checkbox]').forEach(input => input.disabled = mode === 'reading');
   document.querySelectorAll('.callout-icon').forEach(button => button.disabled = mode !== 'live');
 }
 function setMode(next) {
   if (!['source', 'reading', 'live'].includes(next) || next === mode) return;
-  loading = true;
+  viewState(); loading = true;
   if (mode === 'source') { [frontmatter] = splitFrontmatter(currentMarkdown); editor.destroy(); $('editor').replaceChildren(); editor = makeEditor(splitFrontmatter(currentMarkdown)[1]); }
-  mode = next; applyMode(); hideSlash(); $('bubble').hidden = true; loading = false; reportOutline();
+  mode = next; applyMode(); hideSlash(); $('bubble').hidden = true; restorePosition(positions[mode]); loading = false; reportOutline(); refreshFind(); reportView();
 }
 function resizeSource() { const field = $('source'); field.style.height = 'auto'; field.style.height = `${Math.max(520, field.scrollHeight)}px`; }
-$('source').addEventListener('input', () => { currentMarkdown = $('source').value; send('change', { id: documentID, markdown: currentMarkdown }); reportStats(); resizeSource(); });
+$('source').addEventListener('input', () => { currentMarkdown = $('source').value; send('change', { id: documentID, markdown: currentMarkdown }); reportStats(); resizeSource(); refreshFind(); reportView(); });
+$('source').addEventListener('select', reportView);
 $('source').addEventListener('keydown', e => { if (e.key === 'Tab') { e.preventDefault(); document.execCommand('insertText', false, '  '); } });
 
 const slashCommands = [
@@ -399,7 +493,7 @@ function drawSlash() {
   const menu = $('slash'); menu.replaceChildren();
   if (!slashMatches.length) return hideSlash();
   slashMatches.forEach((command, index) => {
-    const button = document.createElement('button'); button.className = `slash-option${index === slashIndex ? ' selected' : ''}`; button.role = 'option'; button.setAttribute('aria-selected', String(index === slashIndex));
+    const button = document.createElement('button'); button.className = `slash-option${index === slashIndex ? ' selected' : ''}`; button.id = `slash-option-${index}`; button.role = 'option'; button.setAttribute('aria-selected', String(index === slashIndex));
     const icon = document.createElement('span'); icon.className = 'slash-icon'; icon.textContent = command.icon;
     const copy = document.createElement('span'); const name = document.createElement('span'); name.className = 'slash-name'; name.textContent = command.name;
     button.title = command.desc;
@@ -411,11 +505,12 @@ function drawSlash() {
     menu.append(button);
   });
   const coords = editor.view.coordsAtPos(editor.state.selection.from); menu.hidden = false;
+  editor.view.dom.setAttribute('aria-controls', 'slash'); editor.view.dom.setAttribute('aria-expanded', 'true'); editor.view.dom.setAttribute('aria-activedescendant', `slash-option-${slashIndex}`);
   menu.style.left = `${Math.min(Math.max(10, coords.left), innerWidth - menu.offsetWidth - 12)}px`;
   menu.style.top = `${Math.max(12, Math.min(coords.bottom + 8, innerHeight - menu.offsetHeight - 12))}px`;
   menu.querySelector('.selected')?.scrollIntoView({ block: 'nearest' });
 }
-function hideSlash() { $('slash').hidden = true; slashRange = null; slashIndex = 0; }
+function hideSlash() { $('slash').hidden = true; slashRange = null; slashIndex = 0; editor?.view.dom.setAttribute('aria-expanded', 'false'); editor?.view.dom.removeAttribute('aria-activedescendant'); }
 function chooseSlash(command) { if (slashRange) editor.chain().focus().deleteRange(slashRange).run(); hideSlash(); execute(command.id); }
 
 function showLink(url = '') {
@@ -423,15 +518,36 @@ function showLink(url = '') {
   linkRange = { from: editor.state.selection.from, to: editor.state.selection.to };
   $('link-url').value = url || editor.getAttributes('link').href || '';
   $('link-title').value = editor.state.doc.textBetween(linkRange.from, linkRange.to, ' ');
+  $('note-query').value = ''; drawNoteLinks(); validateLink();
   $('link-dialog').showModal(); $('link-url').focus();
 }
+function relativeNote(url) {
+  if (!url || /^[\/]|[:\\\x00-\x1f]/.test(url)) return false;
+  try { return /\.(md|markdown)$/i.test(decodeURIComponent(url.split(/[?#]/)[0])); } catch { return false; }
+}
+function validateLink() {
+  const value = $('link-url').value.trim();
+  $('link-url').setCustomValidity(webURL(value) || relativeNote(value) ? '' : 'Choose a note or enter an http(s) URL.');
+  $('link-form').querySelector('[value=card]').disabled = !webURL(value);
+}
+$('link-url').oninput = validateLink;
+function drawNoteLinks() {
+  const query = folded($('note-query').value).value; $('note-links').replaceChildren();
+  for (const note of noteLinks.filter(note => folded(note.path).value.includes(query)).slice(0, 8)) {
+    const button = document.createElement('button'); button.type = 'button'; button.textContent = note.title;
+    const path = document.createElement('small'); path.textContent = note.path; button.append(path);
+    button.onclick = () => { $('link-url').value = note.reference; if (!$('link-title').value.trim()) $('link-title').value = note.title; validateLink(); $('link-form').querySelector('[value=link]').focus(); };
+    $('note-links').append(button);
+  }
+}
+$('note-query').oninput = drawNoteLinks;
 $('link-dialog').addEventListener('close', () => {
   const result = $('link-dialog').returnValue;
   if (result === 'cancel' || !['link', 'card'].includes(result)) { editor.commands.focus(); return; }
-  const url = webURL($('link-url').value.trim()); if (!url) return;
-  const title = $('link-title').value.trim() || new URL(url).hostname.replace(/^www\./, '');
+  const value = $('link-url').value.trim(), url = webURL(value) || (relativeNote(value) ? value : null); if (!url) return;
+  const title = $('link-title').value.trim() || (webURL(url) ? new URL(url).hostname.replace(/^www\./, '') : decodeURIComponent(url.split('/').at(-1)).replace(/\.(md|markdown)$/i, ''));
   const chain = editor.chain().focus().setTextSelection(linkRange);
-  if (result === 'card') chain.insertContent([{ type: 'richLink', attrs: { url, title } }, { type: 'paragraph' }]).run();
+  if (result === 'card' && webURL(url)) chain.insertContent([{ type: 'richLink', attrs: { url, title } }, { type: 'paragraph' }]).run();
   else {
     chain.insertContent({ type: 'text', text: title, marks: [{ type: 'link', attrs: { href: url } }] }).run();
     editor.view.dispatch(editor.state.tr.removeStoredMark(editor.schema.marks.link));
@@ -478,7 +594,7 @@ document.querySelectorAll('[data-command]').forEach(button => {
 function updateBubble() {
   const { from, to, empty } = editor.state.selection;
   const bubble = $('bubble');
-  if (empty || mode !== 'live' || !$('slash').hidden || editor.state.selection.node) { bubble.hidden = true; return; }
+  if (empty || mode !== 'live' || !$('slash').hidden || !$('find').hidden || editor.state.selection.node) { bubble.hidden = true; return; }
   const start = editor.view.coordsAtPos(from), end = editor.view.coordsAtPos(to);
   bubble.hidden = false;
   bubble.style.top = `${Math.max(12, start.top - bubble.offsetHeight - 8)}px`;
@@ -492,7 +608,12 @@ function updateBubble() {
 }
 document.addEventListener('click', e => {
   const anchor = e.target.closest('a');
-  if (anchor) { e.preventDefault(); if (mode === 'reading' || e.metaKey) openURL(anchor.getAttribute('href')); }
+  if (anchor) {
+    e.preventDefault();
+    if (mode === 'reading' || e.metaKey) {
+      openReference(anchor.getAttribute('href'));
+    }
+  }
   if (!e.target.closest('#slash') && !e.target.closest('#bubble')) hideSlash();
 });
 window.addEventListener('resize', () => { $('bubble').hidden = true; hideSlash(); });
@@ -512,15 +633,28 @@ function jumpToHeading(index) {
   heading.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
 }
 window.addEventListener('scroll', () => {
+  reportView();
   $('bubble').hidden = true; hideSlash();
   const next = headingIndex(); if (next !== activeHeading) { activeHeading = next; send('headingActive', { id: documentID, active: next }); }
 }, { passive: true });
 window.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); showFind(); }
+  if (e.key === 'Enter' && e.target.closest('a') && (mode === 'reading' || e.metaKey)) { e.preventDefault(); openReference(e.target.closest('a').getAttribute('href')); }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's' && !e.shiftKey) { e.preventDefault(); send('save'); }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p' && !e.shiftKey) { e.preventDefault(); send('quickOpen'); }
 });
 
-window.notes = { load: loadDocument, setMode, command: execute, getMarkdown: () => currentMarkdown, getJSON: () => editor.getJSON(), focus: () => mode === 'source' ? $('source').focus() : editor.commands.focus(), properties: showProperties, attachment: receiveAttachment, jumpToHeading };
+let printState;
+async function preparePrint() {
+  printState = viewState(); printing = true; clearTimeout(viewTimer); setMode('reading');
+  await Promise.race([Promise.allSettled(Array.from(document.querySelectorAll('.note-image img')).map(image => image.decode())), new Promise(resolve => setTimeout(resolve, 5000))]);
+  for (const image of document.querySelectorAll('.note-image img')) {
+    if (!image.complete || !image.naturalWidth) { image.hidden = true; image.parentElement.querySelector('.image-placeholder').hidden = false; }
+  }
+}
+function finishPrint() { if (printState) { positions = printState.positions; setMode(printState.mode); restorePosition(positions[mode]); printState = null; } printing = false; }
+window.notes = { load: loadDocument, setMode, command: execute, getMarkdown: () => currentMarkdown, getJSON: () => editor.getJSON(), focus: () => mode === 'source' ? $('source').focus() : editor.commands.focus(), properties: showProperties, attachment: receiveAttachment, jumpToHeading,
+  find: term => showFind(term, false), showFind, viewState, textSize, setNotes: notes => { noteLinks = notes; }, preparePrint, finishPrint };
 send('ready');
 // A browser harness loads only explicit fixtures; production content arrives from the native host.
 loadDocument({ id: '', markdown: '', mode: 'live' });

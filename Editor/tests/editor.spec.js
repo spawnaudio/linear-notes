@@ -409,3 +409,105 @@ test('outline reflects rendered headings, scroll position and modes; quick switc
   await page.locator('.tiptap h1').click(); await page.keyboard.press('Meta+k');
   await expect(page.locator('#link-dialog')).toBeVisible();
 });
+
+test('find highlights literal passages across formatting and works in reading and source without rewriting', async ({ page }) => {
+  const original = '# Find\n\nCafé **plan** first.\n\n' + 'Other text.\n\n'.repeat(35) + 'Cafe plan second.\n';
+  await load(page, original);
+  await page.keyboard.press('Meta+f');
+  await page.getByRole('textbox', { name: 'Find text', exact: true }).fill('cafe plan');
+  await expect(page.locator('#find-count')).toHaveText('1 / 2');
+  await expect(page.locator('.find-current')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Next match', exact: true }).click();
+  await expect(page.locator('#find-count')).toHaveText('2 / 2');
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(200);
+  await page.getByRole('button', { name: 'Next match', exact: true }).click();
+  await expect(page.locator('#find-count')).toHaveText('1 / 2');
+  await page.getByRole('textbox', { name: 'Find text', exact: true }).fill('absent');
+  await expect(page.locator('#find-count')).toHaveText('0 / 0');
+  await expect(page.getByRole('button', { name: 'Next match', exact: true })).toBeDisabled();
+  await page.evaluate(() => window.notes.setMode('reading'));
+  await page.getByRole('textbox', { name: 'Find text', exact: true }).fill('cafe plan');
+  await expect(page.locator('#find-count')).toHaveText('1 / 2');
+  await expect(page.getByRole('textbox', { name: 'Read document' })).toHaveAttribute('aria-readonly', 'true');
+  await page.evaluate(() => window.notes.setMode('source'));
+  await page.getByRole('textbox', { name: 'Find text', exact: true }).fill('second');
+  await expect(page.locator('#find-count')).toHaveText('1 / 1');
+  expect(await page.locator('#source').evaluate(el => el.value.slice(el.selectionStart, el.selectionEnd))).toBe('second');
+  expect(await markdown(page)).toBe(original);
+});
+
+test('search jumps, mode positions resume after reopening and state never becomes Markdown', async ({ page }) => {
+  const original = '# Resume\n\n' + 'Paragraph.\n\n'.repeat(40) + '## Target\n\nA relevant passage.';
+  await load(page, original);
+  await page.evaluate(() => window.notes.find('relevant passage'));
+  await expect(page.locator('#find-count')).toHaveText('1 / 1');
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(300);
+  await page.getByRole('button', { name: 'Close find' }).click();
+  const state = await page.evaluate(() => window.notes.viewState());
+  await page.evaluate(({ original, state }) => window.notes.load({ id: 'test.md', markdown: original, mode: state.mode, state }), { original, state });
+  await page.waitForTimeout(100);
+  expect((await page.evaluate(() => window.notes.viewState())).positions.live.from).toBe(state.positions.live.from);
+  expect(await page.evaluate(() => window.scrollY)).toBeCloseTo(state.positions.live.scroll, 0);
+  await page.evaluate(() => { window.notes.setMode('source'); document.getElementById('source').setSelectionRange(100, 105); window.scrollTo(0, 200); window.notes.setMode('live'); window.notes.setMode('source'); });
+  expect(await page.locator('#source').evaluate(el => [el.selectionStart, el.selectionEnd])).toEqual([100, 105]);
+  expect(await markdown(page)).toBe(original);
+  await expect(page.locator('#find')).toBeHidden();
+});
+
+test('note picker inserts portable relative links and keyboard reading opens the native note', async ({ page }) => {
+  await load(page, '# Index\n\nA reference.');
+  await page.evaluate(() => window.notes.setNotes([{ title: 'Café plan', path: 'Projects/Café plan.md', reference: 'Projects/Caf%C3%A9%20plan.md' }]));
+  await page.locator('.tiptap p').click();
+  await page.keyboard.press('Meta+k');
+  await page.getByRole('textbox', { name: 'Link to a note', exact: true }).fill('cafe');
+  await page.locator('#note-links button').click();
+  await expect(page.getByRole('button', { name: 'Rich card', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Markdown link', exact: true }).click();
+  await expect.poll(() => markdown(page)).toContain('Projects/Caf%C3%A9%20plan.md');
+  await page.evaluate(() => window.notes.setMode('reading'));
+  const link = page.locator('.tiptap a');
+  await link.focus(); await page.keyboard.press('Enter');
+  expect(await page.evaluate(() => window.messages.filter(m => m.type === 'openNote').at(-1))).toEqual({ type: 'openNote', id: 'test.md', reference: 'Projects/Caf%C3%A9%20plan.md' });
+  expect(await page.evaluate(() => window.messages.some(m => m.type === 'openLink'))).toBe(false);
+});
+
+test('document text scaling, focus and slash/image actions stay keyboard accessible', async ({ page }) => {
+  await load(page, '# Accessible\n\nParagraph.');
+  const original = await markdown(page);
+  await page.evaluate(() => window.notes.textSize(21));
+  expect(await page.locator('.tiptap').evaluate(el => getComputedStyle(el).fontSize)).toBe('21px');
+  await page.locator('.tiptap').focus();
+  expect(await page.locator('.tiptap').evaluate(el => getComputedStyle(el).outlineStyle)).toBe('solid');
+  await page.locator('.tiptap p').click(); await page.keyboard.press('End'); await page.keyboard.press('Enter'); await page.keyboard.type('/');
+  await expect(page.locator('.tiptap')).toHaveAttribute('aria-expanded', 'true');
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('.tiptap')).toHaveAttribute('aria-activedescendant', 'slash-option-1');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.tiptap')).toHaveAttribute('aria-expanded', 'false');
+  const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=';
+  await load(page, `# Image\n\n![Description](${pixel})`);
+  await page.locator('.note-image').focus(); await page.keyboard.press('Enter');
+  await expect(page.getByRole('button', { name: 'Replace', exact: true })).toBeFocused();
+  await page.keyboard.press('Tab'); await page.keyboard.press('Enter');
+  await expect(page.getByRole('textbox', { name: 'Alt text', exact: true })).toBeVisible();
+  expect(original).toBe('# Accessible\n\nParagraph.');
+});
+
+test('print produces a clean light document and restores exact source and position', async ({ page }) => {
+  await load(page, fixture, 'source');
+  await page.locator('#source').evaluate(el => el.setSelectionRange(20, 25));
+  await page.evaluate(() => window.notes.preparePrint());
+  await page.emulateMedia({ media: 'print', colorScheme: 'dark' });
+  await expect(page.locator('#editor')).toBeVisible();
+  await expect(page.locator('#source')).toBeHidden();
+  await expect(page.locator('#properties')).toBeHidden();
+  expect(await page.locator('body').evaluate(el => getComputedStyle(el).backgroundColor)).toBe('rgb(255, 255, 255)');
+  const pdf = await page.pdf({ format: 'A4', printBackground: true });
+  expect(pdf.subarray(0, 4).toString()).toBe('%PDF');
+  expect(pdf.length).toBeGreaterThan(1000);
+  await page.emulateMedia({ media: 'screen', colorScheme: 'light' });
+  await page.evaluate(() => window.notes.finishPrint());
+  await expect(page.locator('#source')).toBeVisible();
+  expect(await page.locator('#source').evaluate(el => [el.selectionStart, el.selectionEnd])).toEqual([20, 25]);
+  expect(await markdown(page)).toBe(fixture);
+});
