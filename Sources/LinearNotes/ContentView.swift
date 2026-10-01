@@ -44,33 +44,9 @@ struct ContentView: View {
     var body: some View {
         HStack(spacing: 0) {
             sidebar.frame(width: 280).frame(width: store.sidebarVisible ? 280 : 0, alignment: .leading).clipped().opacity(store.sidebarVisible ? 1 : 0).allowsHitTesting(store.sidebarVisible).accessibilityHidden(!store.sidebarVisible)
-            VStack(spacing: 0) {
-                tabstrip
-                VStack(spacing: 0) {
-                    topbar
-                    Rectangle().fill(Palette.line).frame(height: 1)
-                    if let error = store.error {
-                        HStack(alignment: .center, spacing: 10) {
-                            Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
-                            Text(error).font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
-                            Spacer(minLength: 0)
-                            if store.conflict { Button("Keep both", action: store.keepBoth).buttonStyle(.bordered) }
-                            else if store.saveFailed { Button("Retry") { store.bridge?.flush { _ in } }.buttonStyle(.bordered) }
-                            else { Button { store.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(ChromeButtonStyle()).accessibilityLabel("Dismiss error") }
-                        }.padding(12).background(Color.orange.opacity(0.07))
-                    }
-                    ZStack {
-                        MarkdownEditorView(store: store).opacity(store.selected == nil ? 0 : 1).allowsHitTesting(store.selected != nil)
-                        if store.selected == nil { emptyState }
-                    }
-                }
-                .background(Palette.canvas)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(Palette.boundary, lineWidth: 1) }
+            paneTree(store.layout)
                 .padding(.trailing, store.inspectorVisible ? 0 : 8)
                 .padding(.leading, store.sidebarVisible ? 0 : 8)
-                statusbar
-            }
             if store.inspectorVisible { inspector.frame(width: 280) }
         }
         .background(Palette.sidebar)
@@ -78,7 +54,7 @@ struct ContentView: View {
         .tint(Palette.accent)
         .buttonStyle(ChromeButtonStyle())
         .frame(minWidth: store.inspectorVisible ? 1100 : 820, minHeight: 540)
-        .ignoresSafeArea()
+        .ignoresSafeArea(edges: [.leading, .trailing, .bottom])
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: store.sidebarVisible)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: store.inspectorVisible)
         .sheet(isPresented: $store.quickOpenVisible) { QuickOpenView(store: store) }
@@ -172,64 +148,20 @@ struct ContentView: View {
         return true
     }
 
-    var tabstrip: some View {
-        HStack(spacing: 8) {
-            if !store.sidebarVisible { Spacer().frame(width: 68) }
-            Button { store.sidebarVisible.toggle() } label: { Image(systemName: "sidebar.left") }
-                .help("Toggle sidebar · ⌘\\").accessibilityLabel("Toggle sidebar")
-            HStack(spacing: 8) {
-                Image(systemName: store.selected == nil ? "square.stack" : "doc.text").foregroundStyle(Palette.muted)
-                Text(store.selected.map { NoteItem(path: $0, isFolder: false).title } ?? "Notes")
-                    .lineLimit(1).truncationMode(.middle)
+    func paneTree(_ layout: PaneLayout) -> AnyView {
+        switch layout {
+        case .pane(let id):
+            if let pane = store.panes.first(where: { $0.id == id }) {
+                return AnyView(NotePaneView(store: store, pane: pane).id(id))
             }
-            .font(.system(size: 13, weight: .medium))
-            .padding(.horizontal, 12).frame(height: 32)
-            .background(Palette.control, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.line, lineWidth: 1))
-            .frame(maxWidth: 260, alignment: .leading)
-            Button { store.create() } label: { Image(systemName: "plus") }
-                .help("New note · ⌘N").accessibilityLabel("New note")
-            Spacer(minLength: 0)
+            return AnyView(EmptyView())
+        case .split(let id, let horizontal, let fraction, let first, let second):
+            return AnyView(PaneSplitView(horizontal: horizontal, fraction: fraction, resize: { value in
+                store.layout = store.layout.resizing(id, to: value)
+            }, finish: store.saveWorkspace, first: paneTree(first), second: paneTree(second)))
         }
-        .font(.system(size: 14)).foregroundStyle(Palette.secondary)
-        .padding(.horizontal, 12).frame(height: 46).background(Palette.sidebar)
     }
 
-    var topbar: some View {
-        HStack(spacing: 13) {
-            if let selected = store.selected {
-                Image(systemName: "doc.text").foregroundStyle(Palette.muted)
-                let item = NoteItem(path: selected, isFolder: false)
-                Text(item.parent.isEmpty ? "Notes" : item.parent.replacingOccurrences(of: "/", with: "  /  ")).foregroundStyle(Palette.muted).lineLimit(1)
-                Text("/").foregroundStyle(.quaternary)
-                Text(item.title).foregroundStyle(Palette.secondary).lineLimit(1).truncationMode(.middle)
-            } else { Text("Notes").foregroundStyle(Palette.muted) }
-            Spacer(minLength: 10)
-            if let selected = store.selected {
-                HStack(spacing: 1) {
-                    ForEach(EditorMode.allCases, id: \.self) { mode in
-                        Button { store.mode = mode } label: {
-                            HStack(spacing: 5) { Image(systemName: mode.icon).font(.system(size: 13)); if store.mode == mode { Text(mode.title).font(.system(size: 12, weight: .medium)) } }.padding(.horizontal, 8).frame(height: 30)
-                                .background(store.mode == mode ? Palette.control : .clear, in: RoundedRectangle(cornerRadius: 8))
-                        }.buttonStyle(ChromeButtonStyle()).foregroundStyle(store.mode == mode ? Palette.primary : Palette.muted).help(mode.title).accessibilityLabel(mode.title).accessibilityAddTraits(store.mode == mode ? .isSelected : [])
-                    }
-                }.padding(2).accessibilityLabel("Document mode")
-                Button { store.toggleBookmark(selected) } label: { Image(systemName: store.isBookmarked(selected) ? "bookmark.fill" : "bookmark").font(.system(size: 12)).foregroundStyle(store.isBookmarked(selected) ? Palette.accent : Palette.muted) }.buttonStyle(ChromeButtonStyle()).help("Bookmark note").accessibilityLabel("Bookmark note")
-                Menu {
-                    if let item = store.items.first(where: { $0.path == selected }) {
-                        Button(store.isPinned(selected) ? "Unpin note" : "Pin note") { store.togglePin(selected) }
-                        Button("Rename…") { store.rename(item) }
-                        Button("Show in Finder") { store.reveal() }
-                        Divider(); Button("Move to Trash…", role: .destructive) { store.trash(item) }
-                    }
-                } label: { Image(systemName: "ellipsis").font(.system(size: 13)) }.menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 30, height: 30).accessibilityLabel("Note actions")
-            }
-            Button { store.inspectorVisible.toggle() } label: {
-                Image(systemName: "sidebar.right").foregroundStyle(store.inspectorVisible ? Palette.primary : Palette.muted)
-            }.help("Toggle details · ⌘⌥\\").accessibilityLabel("Toggle details sidebar")
-                .accessibilityValue(store.inspectorVisible ? "Open" : "Closed")
-        }.font(.system(size: 13)).padding(.horizontal, 24).frame(height: 52)
-    }
     var inspector: some View {
         VStack(spacing: 0) {
             HStack {
@@ -313,27 +245,7 @@ struct ContentView: View {
         }.background(Palette.sidebar)
     }
 
-    var statusbar: some View {
-        HStack(spacing: 6) {
-            if store.selected != nil {
-                Circle().fill(store.conflict || store.saveFailed ? Color.orange : Color.green).frame(width: 4, height: 4)
-                Text(store.status)
-                Spacer()
-                Text("\(store.words) words"); Text("·").padding(.horizontal, 3); Text("Markdown")
-            } else { Spacer(); Text("Markdown · Saved on your Mac"); Spacer() }
-        }.font(.system(size: 10)).foregroundStyle(Palette.muted).padding(.horizontal, 23).frame(height: 28).background(Palette.sidebar)
-    }
-    var emptyState: some View {
-        VStack(spacing: 17) {
-            Image(systemName: "doc.text").font(.system(size: 28, weight: .regular)).frame(width: 64, height: 64).background(Palette.panel, in: RoundedRectangle(cornerRadius: 12)).foregroundStyle(Palette.accent.opacity(0.7)).padding(.bottom, 4)
-            Text(store.library == nil ? "Your notes, on your Mac" : "Choose a note").font(.system(size: 28, weight: .semibold)).tracking(-0.6)
-            Text(store.library == nil ? "Open a folder to start writing in Markdown." : "Select a note from the sidebar or create a new one.").font(.system(size: 13)).lineSpacing(5).multilineTextAlignment(.center).foregroundStyle(Palette.secondary)
-            Button { if store.library == nil { store.chooseFolder() } else { store.create() } } label: {
-                Label(store.library == nil ? "Choose a notes folder" : "New note", systemImage: store.library == nil ? "folder" : "plus").font(.system(size: 12, weight: .medium)).padding(.horizontal, 16).padding(.vertical, 10).background(Palette.action, in: RoundedRectangle(cornerRadius: 8)).foregroundStyle(.white)
-            }.buttonStyle(.plain).padding(.top, 9)
-            Text(store.library == nil ? "Works with any folder of .md files" : "⌘N to start writing").font(.system(size: 10)).foregroundStyle(Palette.muted)
-        }.padding(32).frame(maxWidth: .infinity, maxHeight: .infinity).background(Palette.canvas)
-    }
+
 }
 
 struct SidebarRow: View {

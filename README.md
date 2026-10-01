@@ -22,6 +22,7 @@ Requires macOS 15 or later. This is a locally signed MVP, not a notarized distri
 - Instant **⌘N** capture into a unique Untitled note, ready to type; rename it later.
 - Find within a document with **⌘F**, match highlighting/counts, and next/previous navigation in all three modes. Library search results jump to the matching passage.
 - Remembered mode, cursor/selection, and scroll position for each note.
+- Tab groups with nested splits in all four directions, draggable/reorderable tabs, resizable dividers, and layouts restored when reopening the notebook. Different panes can show the same note in different modes, with a shared draft.
 - Relative Markdown links to other notes from the existing link dialog; open inside the app and update when notes/folders move or rename through the app.
 - Native **File → Print / Save as PDF…**, with a clean document layout.
 - Document text sizing in View, visible keyboard focus, and labelled editor controls.
@@ -38,9 +39,14 @@ Right-click an item for pin, bookmark, rename, new child items, and Trash action
 
 ## Shortcuts
 
+Right-click a tab or use the split button beside the tabs to split left, right, up, or down. Drag a tab title to reorder it; the insertion line shows whether it lands before or after another tab. Drop on another group's tab bar to move it, or on a pane's editor edge to create a split; the highlighted area shows its destination. Splitting a lone tab leaves an empty pane in its place. Drag dividers to resize. Closing the last tab in a group collapses that split. Sidebar note drops open in the target pane or a new split. The details sidebar and menu commands follow the active pane. Layouts live in `.linear-notes/workspace.json`; note files stay ordinary Markdown.
+
 | Action | Shortcut |
 | --- | --- |
 | New note / folder | ⌘N / ⌘⇧N |
+| New / close tab | ⌘T / ⌘W |
+| Split right / down | ⌘⌥→ / ⌘⌥↓ |
+| Next / previous tab in group | ⌃Tab / ⌃⇧Tab |
 | Open notes folder / save | ⌘O / ⌘S |
 | Bold / italic / underline | ⌘B / ⌘I / ⌘U |
 | Strikethrough / inline code | ⌘⇧S / ⌘E |

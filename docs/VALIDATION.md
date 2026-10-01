@@ -87,3 +87,27 @@ Compared the native preview with the supplied Linear screenshot. The context str
 - Replaced `/Applications/Linear Notes v1.3.app` in place. The installed bundle reports **1.3.1** (build 4) and passes local signature verification.
 - Installed executable SHA-256 is `378b353920e65948d967c25079d4f92bd9c32054178ac68809d92fbf7b58aa62`; it matches the packaged executable. Installed editor JS/CSS/HTML also match the release bundle.
 - Launched the replacement from that exact Applications path and verified its running executable and accessible native window. Personal notebook contents were not used for QA edits.
+
+## Tabs and split panes — 1.3.2 · 1 October 2026
+
+- **24 native tests** and **26 editor tests** pass. The five new workspace checks cover repeated splits in all four directions, tab order and movement between groups, split creation from moved tabs, collapse on closing, persisted split ratios/active tabs/per-tab mode and position, shared drafts, inactive-tab conflicts, all-editor save blocking, note renames, external updates, and missing-file restoration.
+- A native SwiftUI window with actual WKWebView editors verified nested right/down splits, editor-pointer activation, a Source edit appearing in a separate Reading pane, opening another note in the active group, saving all views, closing a group, and Keep both after an external edit. The external file remained unchanged and the draft opened separately. The native light appearance was captured and inspected using a temporary notebook; the window and notebook were removed after the check.
+- Release packaging and local signature verification pass. The updated bundle is **dist/Linear Notes v1.3.app**, version **1.3.2** (build 5). This change does not replace the installed Applications bundle.
+- Native drag gestures/drop highlighting, all divider gestures, full keyboard/VoiceOver usability, dark native pane appearance, and performance with many panes or very large notes still need manual coverage. Reorder/move/split operations are covered at the workspace-state layer. Each visible pane has a separate editor; sibling views reload when the shared draft changes.
+- Separate windows and stacked tabs are outside this feature. Existing live Linear integration limitations remain unchanged.
+
+### Installed replacement — 1.3.2 · 2 October 2026
+
+- Rebuilt the editor and release app, then replaced `/Applications/Linear Notes v1.3.app` in place. The installed bundle reports **1.3.2** (build 5) and passes local signature verification.
+- Installed executable SHA-256 is `61677559ed0ae7b617949f2a0ddd96f894b5ee80ae9927d49b467c5ce5ec5c02`; it matches the packaged executable. Installed editor JavaScript, CSS, and HTML match the release bundle.
+- Launched the replacement and verified its running executable comes from that exact Applications path. A copy of the previous 1.3.1 app was retained temporarily for rollback.
+- The 24 native and 26 editor checks above were completed during feature implementation on 1 October; they were not rerun for this installation. Native drag-gesture coverage remains unverified.
+
+### Drag tab arrangement — 2 October 2026
+
+- Version **1.3.3** (build 6): **25 native tests passed** with Xcode-beta and native SwiftPM, including regression checks for every lone-tab split edge, edge hit regions, tab order, restored layouts, shared drafts, conflict protection, and real WKWebView editors.
+- Used an isolated, locally signed app copy and temporary A/B/C notes for actual mouse gestures. Verified insertion before a tab, after a tab, after the last tab, transfer to another tab bar, center transfer over the editor, and nested left/right/up/down edge splits. A lone-tab edge drop kept an empty source pane; moving the last tab to another group collapsed the source pane.
+- Quit and reopened that temporary app: the pane tree, active pane, and tab orders survived. All three Markdown files retained their exact original contents.
+- Native tab buttons prevent SwiftUI button tracking from swallowing the drag. The tab strip respects the window titlebar; the declared custom drag type reaches tab destinations, and the native editor routes tab drops to the pane layout. Other editor drops keep WebKit's existing handling.
+- Release packaging and local signature verification passed. Replaced **/Applications/Linear Notes v1.3.app** in place with **1.3.3** (build 6). All installed bundle files match the packaged build; executable SHA-256: `19f156103b2582dacab4d3647566297c0609ed18a93a41bd20638d1aa00b15cb`. The installed executable launched (PID 84412) and its native window was confirmed through accessibility.
+- The previous installed bundle is retained in a temporary rollback folder. The 26 browser/editor tests recorded for 1.3.2 were not rerun for this native drag fix; editor JavaScript did not change in this update. Native drag coverage is limited to the layouts and gestures above.

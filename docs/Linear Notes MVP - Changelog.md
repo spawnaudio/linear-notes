@@ -2,6 +2,22 @@
 
 This document records feature-set changes and additions after the original product outline. The original outline remains in [Linear Notes - v1.0 Ideation](<Linear Notes - v1.0 Ideation.md>).
 
+## 1.3.3 — Drag tabs to arrange panes · 2 October 2026
+
+- Tab titles start native mouse drags; the tab strip sits below the macOS titlebar so dragging a tab does not move the window.
+- Reordering accepts both halves of each tab and shows an insertion line. Drops on a group's tab bar append or insert the moved tab.
+- Drops over the editor reach the pane layout and create nested left/right/up/down splits. Dragging a lone tab to its own edge leaves an empty pane instead of silently rejecting the drop.
+- Packaged as **Linear Notes v1.3.app**, version **1.3.3** (build 6).
+
+## 1.3.2 — Tabs and split panes · 1 October 2026
+
+- Added tab groups and recursively nested splits to the left, right, above, and below any pane. Tab context menus, pane menus, and View commands expose splitting; `⌘⌥→` / `⌘⌥↓` split right/down.
+- Drag tabs to reorder, move between groups, or create splits at pane edges. Sidebar notes can open in any pane. Dividers resize with mouse dragging or accessibility adjustment.
+- `⌘T` opens a blank tab and the note switcher; `⌘W` closes a tab; `⌃Tab` / `⌃⇧Tab` cycle within the group. Empty groups collapse; the last group retains an empty tab.
+- Saved notebook layouts include tab order, active selections, split orientation/ratios, and individual mode/position state. Missing files are skipped on restore; note/folder moves update every open tab.
+- Shared drafts keep multiple views of the same note consistent while allowing independent modes. Closing, folder changes, layout changes, and quitting flush every editor; a failed save reveals the affected tab. Keep both preserves the external file and opens a separate draft.
+- Packaged as **Linear Notes v1.3.app**, version **1.3.2** (build 5). Separate windows and stacked tabs are outside this feature.
+
 ## 1.3.1 — Capture, retrieval, and recovery · 1 October 2026
 
 ### Added / Changed / Fixed

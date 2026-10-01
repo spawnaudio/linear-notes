@@ -9,6 +9,7 @@ public struct NotePosition: Codable, Equatable, Sendable {
 public struct NoteSession: Codable, Equatable, Sendable {
     public var mode: String
     public var positions: [String: NotePosition]
+    public init(mode: String, positions: [String: NotePosition]) { self.mode = mode; self.positions = positions }
 }
 
 extension NoteLibrary {
@@ -33,6 +34,8 @@ extension NoteLibrary {
 
     public func sessions() throws -> [String: NoteSession] { try readMetadata("session.json", default: [:]) }
     public func saveSessions(_ value: [String: NoteSession]) throws { try writeMetadata(value, name: "session.json") }
+    public func workspace<T: Decodable>() throws -> T? { try readMetadata("workspace.json", default: Optional<T>.none) }
+    public func saveWorkspace<T: Encodable>(_ value: T) throws { try writeMetadata(value, name: "workspace.json") }
 
     public func recordDraft(_ text: String?, for path: String) throws {
         _ = try url(for: path)
