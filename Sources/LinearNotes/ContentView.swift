@@ -59,6 +59,7 @@ struct ContentView: View {
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: store.inspectorVisible)
         .sheet(isPresented: $store.quickOpenVisible) { QuickOpenView(store: store) }
         .sheet(isPresented: $store.linearImportVisible) { LinearImportView(store: store) }
+        .sheet(isPresented: $store.linearRefreshVisible) { LinearRefreshView(store: store) }
     }
 
     var sidebar: some View {
@@ -216,6 +217,13 @@ struct ContentView: View {
                             if let source = store.propertyRows.first(where: { $0.name == "linearDocumentUrl" })?.value,
                                let url = URL(string: source.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))), url.scheme == "https", url.host == "linear.app" {
                                 Link("Open original in Linear", destination: url)
+                            }
+                            if NoteLibrary.linearSource(in: store.markdown) != nil {
+                                Button("Refresh from Linear…") { store.linearRefreshVisible = true }
+                            }
+                            if !NoteLibrary.remoteImageURLs(in: store.markdown).isEmpty {
+                                Button(store.savingImages ? "Saving images…" : "Save images locally") { store.saveImagesLocally() }
+                                    .disabled(store.savingImages)
                             }
                             Text("Document").foregroundStyle(Palette.muted)
                             HStack { Text("Mode"); Spacer(); Picker("Mode", selection: $store.mode) {

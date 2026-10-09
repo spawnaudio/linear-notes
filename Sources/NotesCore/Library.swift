@@ -177,20 +177,13 @@ public final class NoteLibrary {
     public func existingLinearImport(_ id: String) throws -> String? {
         guard UUID(uuidString: id) != nil else { throw LibraryError.invalidPath }
         for item in try scan() where !item.isFolder {
-            let text = try read(item.path).replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\u{FEFF}", with: "")
-            guard text.hasPrefix("---\n"), let end = text.dropFirst(4).range(of: "\n---") else { continue }
-            let header = String(text[text.index(text.startIndex, offsetBy: 4)..<end.lowerBound])
-            if header.split(separator: "\n").contains(where: { line in
-                let pair = line.split(separator: ":", maxSplits: 1)
-                return pair.count == 2 && pair[0] == "linearDocumentId" && pair[1].trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\"'")).lowercased() == id.lowercased()
-            }) { return item.path }
+            if Self.hasLinearDocumentID(id, in: try read(item.path)) { return item.path }
         }
         return nil
     }
 
     public func importLinearDocument(id: String, projectID: String, title: String, sourceURL: String, content: String, parent: String) throws -> String {
-        guard UUID(uuidString: id) != nil, UUID(uuidString: projectID) != nil,
-              let source = URL(string: sourceURL), source.scheme == "https", source.host == "linear.app" else { throw LibraryError.invalidPath }
+        guard UUID(uuidString: id) != nil, UUID(uuidString: projectID) != nil, Self.validLinearURL(sourceURL) else { throw LibraryError.invalidPath }
         if let existing = try existingLinearImport(id) { return existing }
         var clean = String(title.components(separatedBy: CharacterSet(charactersIn: "/:\n\r")).joined(separator: "-").trimmingCharacters(in: CharacterSet(charactersIn: ". ")).prefix(120))
         while clean.utf8.count > 200 { clean.removeLast() }

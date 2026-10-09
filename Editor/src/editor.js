@@ -9,6 +9,7 @@ import Image from '@tiptap/extension-image';
 import Paragraph from '@tiptap/extension-paragraph';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import { closeHistory } from '@tiptap/pm/history';
 
 const $ = id => document.getElementById(id);
 const send = (type, payload = {}) => window.webkit?.messageHandlers?.notes?.postMessage({ type, ...payload });
@@ -20,6 +21,8 @@ let calloutPosition = null, calloutColour = '', imageAltPosition = null, uploadR
 const imageRequests = new Map();
 let noteLinks = [], positions = {}, viewTimer, printing = false;
 let findMatches = [], findIndex = 0;
+const sourceVersions = new Map();
+const sourceText = text => text.replace(/\r\n?/g, '\n');
 const FindHighlights = Extension.create({
   name: 'findHighlights',
   addProseMirrorPlugins() { return [new Plugin({ key: new PluginKey('findHighlights'), props: {
@@ -30,7 +33,7 @@ const FindHighlights = Extension.create({
 function folded(text) {
   let value = '', starts = [], ends = [], offset = 0;
   for (const character of text) {
-    const part = character.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase();
+    const part = (character === '\n' && text[offset - 1] === '\r' ? '' : character === '\r' ? '\n' : character).normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase();
     for (let index = 0; index < part.length; index++) { starts.push(offset); ends.push(offset + character.length); }
     if (!part && ends.length) ends[ends.length - 1] = offset + character.length;
     value += part; offset += character.length;
@@ -38,7 +41,7 @@ function folded(text) {
   return { value, starts, ends };
 }
 function refreshFind(jump = false) {
-  const term = folded($('find-text').value.trim()).value;
+  const term = folded($('find-text').value).value;
   findMatches = [];
   const collect = (text, base) => {
     const haystack = folded(text);
@@ -48,18 +51,21 @@ function refreshFind(jump = false) {
   };
   if (!$('find').hidden && term) {
     if (mode === 'source') collect(currentMarkdown, 0);
-    else editor.state.doc.descendants((node, pos) => { if (node.isTextblock) { collect(node.textBetween(0, node.content.size, '\n', '\ufffc'), pos + 1); return false; } });
+    // shortcut: Live matches stay within textblocks; map block separators if cross-block search is needed.
+    else editor.state.doc.descendants((node, pos) => { if (node.isTextblock) { collect(node.textBetween(0, node.content.size, '\n', leaf => leaf.type.name === 'hardBreak' ? '\n' : '\ufffc'), pos + 1); return false; } });
   }
   findIndex = Math.min(findIndex, Math.max(0, findMatches.length - 1));
   $('find-count').textContent = `${findMatches.length ? findIndex + 1 : 0} / ${findMatches.length}`;
   $('find-next').disabled = $('find-previous').disabled = !findMatches.length;
+  $('find-toggle').disabled = $('replace-text').disabled = mode === 'reading';
+  $('replace-current').disabled = $('replace-all').disabled = mode === 'reading' || !findMatches.length;
   editor.view.dispatch(editor.state.tr.setMeta('find', true));
   if (jump) jumpToMatch();
 }
 function jumpToMatch() {
   const match = findMatches[findIndex]; if (!match) return;
   if (mode === 'source') {
-    $('source').setSelectionRange(match.from, match.to);
+    $('source').setSelectionRange(sourceText(currentMarkdown.slice(0, match.from)).length, sourceText(currentMarkdown.slice(0, match.to)).length);
     const line = currentMarkdown.slice(0, match.from).split('\n').length - 1;
     window.scrollTo(0, $('source').offsetTop + line * parseFloat(getComputedStyle($('source')).lineHeight) - innerHeight / 3);
   } else {
@@ -75,11 +81,48 @@ function showFind(term, focus = true) {
   if (focus) { $('find-text').focus(); $('find-text').select(); }
 }
 function closeFind() { $('find').hidden = true; refreshFind(); if (mode !== 'reading') window.notes.focus(); }
+function toggleReplacement(visible = $('find-replacement').hidden) {
+  $('find-replacement').hidden = !visible;
+  $('find-toggle').setAttribute('aria-expanded', String(visible));
+  $('find-toggle').setAttribute('aria-label', visible ? 'Hide replacement' : 'Show replacement');
+}
+function showFindAndReplace() { showFind(); if (mode !== 'reading') toggleReplacement(true); }
+function replaceMatches(all = false) {
+  if (mode === 'reading' || !findMatches.length) return;
+  const matches = all ? [...findMatches] : [findMatches[findIndex]], replacement = $('replace-text').value;
+  if (mode === 'source') {
+    const from = matches[0].from, to = matches.at(-1).to;
+    let next = currentMarkdown;
+    for (const match of matches.reverse()) next = next.slice(0, match.from) + replacement + next.slice(match.to);
+    // Textarea values normalize line endings; retain raw snapshots for native undo and redo.
+    for (const version of [currentMarkdown, next]) if (version !== sourceText(version)) sourceVersions.set(sourceText(version), version);
+    const insertion = next.slice(from, next.length - (currentMarkdown.length - to));
+    const field = $('source'); field.focus();
+    field.setSelectionRange(sourceText(currentMarkdown.slice(0, from)).length, sourceText(currentMarkdown.slice(0, to)).length);
+    document.execCommand('insertText', false, sourceText(insertion));
+  } else {
+    const transaction = closeHistory(editor.state.tr);
+    for (const match of matches.reverse()) {
+      const start = transaction.doc.resolve(match.from), marks = start.nodeAfter?.marks || start.marks();
+      const content = start.parent.type.spec.code ? (replacement ? editor.schema.text(replacement, marks) : []) : replacement.split('\n').flatMap((line, index) => [
+        ...(index ? [editor.schema.nodes.hardBreak.create(null, null, marks)] : []), ...(line ? [editor.schema.text(line, marks)] : [])
+      ]);
+      transaction.replaceWith(match.from, match.to, content);
+    }
+    findMatches = [];
+    editor.view.dispatch(transaction);
+    editor.view.dispatch(closeHistory(editor.state.tr));
+  }
+  refreshFind(true); $('replace-text').focus();
+}
+$('find-toggle').onclick = () => toggleReplacement();
+$('replace-current').onclick = () => replaceMatches(); $('replace-all').onclick = () => replaceMatches(true);
 $('find-text').oninput = () => { findIndex = 0; refreshFind(true); };
 function nextMatch(direction) { if (findMatches.length) { findIndex = (findIndex + direction + findMatches.length) % findMatches.length; refreshFind(true); } }
 $('find-next').onclick = () => nextMatch(1); $('find-previous').onclick = () => nextMatch(-1); $('find-close').onclick = closeFind;
 $('find').onkeydown = event => {
-  if (event.key === 'Enter') { event.preventDefault(); nextMatch(event.shiftKey ? -1 : 1); }
+  if (event.key === 'Enter' && event.target === $('find-text') && !event.altKey) { event.preventDefault(); nextMatch(event.shiftKey ? -1 : 1); }
+  if (event.key === 'Enter' && event.target === $('replace-text') && !event.shiftKey) { event.preventDefault(); replaceMatches(); }
   if (event.key === 'Escape') { event.preventDefault(); closeFind(); }
 };
 function viewState() {
@@ -435,7 +478,7 @@ function reportStats() { send('properties', { id: documentID, text: propertiesTe
 function loadDocument(payload) {
   clearTimeout(viewTimer);
   loading = true; documentID = payload.id; currentMarkdown = payload.markdown; mode = payload.mode || 'live';
-  positions = payload.state?.positions || {}; noteLinks = payload.notes || []; $('find').hidden = true; findMatches = [];
+  positions = payload.state?.positions || {}; noteLinks = payload.notes || []; $('find').hidden = true; findMatches = []; sourceVersions.clear(); toggleReplacement(false);
   assetBase = payload.assetBase || ''; imageRequests.clear(); activeHeading = -1;
   for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close('cancel');
   [frontmatter] = splitFrontmatter(currentMarkdown);
@@ -460,7 +503,7 @@ function setMode(next) {
   mode = next; applyMode(); hideSlash(); $('bubble').hidden = true; restorePosition(positions[mode]); loading = false; reportOutline(); refreshFind(); reportView();
 }
 function resizeSource() { const field = $('source'); field.style.height = 'auto'; field.style.height = `${Math.max(520, field.scrollHeight)}px`; }
-$('source').addEventListener('input', () => { currentMarkdown = $('source').value; send('change', { id: documentID, markdown: currentMarkdown }); reportStats(); resizeSource(); refreshFind(); reportView(); });
+$('source').addEventListener('input', () => { currentMarkdown = sourceVersions.get($('source').value) ?? $('source').value; send('change', { id: documentID, markdown: currentMarkdown }); reportStats(); resizeSource(); refreshFind(); reportView(); });
 $('source').addEventListener('select', reportView);
 $('source').addEventListener('keydown', e => { if (e.key === 'Tab') { e.preventDefault(); document.execCommand('insertText', false, '  '); } });
 
@@ -640,7 +683,7 @@ window.addEventListener('scroll', () => {
   const next = headingIndex(); if (next !== activeHeading) { activeHeading = next; send('headingActive', { id: documentID, active: next }); }
 }, { passive: true });
 window.addEventListener('keydown', e => {
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); showFind(); }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); if (e.altKey) showFindAndReplace(); else showFind(); }
   if (e.key === 'Enter' && e.target.closest('a') && (mode === 'reading' || e.metaKey)) { e.preventDefault(); openReference(e.target.closest('a').getAttribute('href')); }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's' && !e.shiftKey) { e.preventDefault(); send('save'); }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p' && !e.shiftKey) { e.preventDefault(); send('quickOpen'); }
@@ -656,7 +699,7 @@ async function preparePrint() {
 }
 function finishPrint() { if (printState) { positions = printState.positions; setMode(printState.mode); restorePosition(positions[mode]); printState = null; } printing = false; }
 window.notes = { load: loadDocument, setMode, command: execute, getMarkdown: () => currentMarkdown, getJSON: () => editor.getJSON(), focus: () => mode === 'source' ? $('source').focus() : editor.commands.focus(), properties: showProperties, attachment: receiveAttachment, jumpToHeading,
-  find: term => showFind(term, false), showFind, viewState, textSize, setNotes: notes => { noteLinks = notes; }, preparePrint, finishPrint };
+  find: term => showFind(term, false), showFind, showFindAndReplace, viewState, textSize, setNotes: notes => { noteLinks = notes; }, preparePrint, finishPrint };
 send('ready');
 // A browser harness loads only explicit fixtures; production content arrives from the native host.
 loadDocument({ id: '', markdown: '', mode: 'live' });

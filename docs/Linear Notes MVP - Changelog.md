@@ -2,6 +2,15 @@
 
 This document records feature-set changes and additions after the original product outline. The original outline remains in [Linear Notes - v1.0 Ideation](<Linear Notes - v1.0 Ideation.md>).
 
+## 1.3.4 — Replace text and refresh linked documents · 10 October 2026
+
+- Added Find and Replace (`⌘⌥F`), Replace all, and one-step undo in Live Preview and Source. Reading stays read-only; Source retains exact frontmatter and line endings during replacement and undo/redo.
+- Split dividers accept keyboard focus, show a focus outline, and resize with axis-matching arrow keys in 5% steps. Accessibility adjustment and mouse dragging remain available.
+- Added **Save images locally** to the details sidebar for notes with remote Markdown images. Inline and reference-style images are downloaded to managed attachments; image examples in code and ordinary hyperlinks are preserved. Only Linear's upload host receives the saved key.
+- Added manual **Refresh from Linear…** with local/incoming Markdown previews, explicit replacement, and Keep both. Local YAML properties remain; external changes prevent replacement. Incoming copies retain a source URL without taking the original's import identity.
+- Packaged as **Linear Notes v1.3.app**, version **1.3.4** (build 7). The installed Applications copy is not replaced by this work.
+- Validation and remaining live-integration/accessibility limits are recorded in `VALIDATION.md`.
+
 ## 1.3.3 — Drag tabs to arrange panes · 2 October 2026
 
 - Tab titles start native mouse drags; the tab strip sits below the macOS titlebar so dragging a tab does not move the window.

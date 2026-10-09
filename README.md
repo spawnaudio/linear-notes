@@ -21,6 +21,7 @@ Requires macOS 15 or later. This is a locally signed MVP, not a notarized distri
 - Native sidebar with folders, content search with matching excerpts, drag sorting, pins within each parent folder, and a separate bookmark section.
 - Instant **⌘N** capture into a unique Untitled note, ready to type; rename it later.
 - Find within a document with **⌘F**, match highlighting/counts, and next/previous navigation in all three modes. Library search results jump to the matching passage.
+- Find and replace with **⌘⌥F**, including Replace all and undo in Live Preview and Source. Reading remains read-only. Live matches stay within a paragraph or code block; Source supports passages across paragraphs.
 - Remembered mode, cursor/selection, and scroll position for each note.
 - Tab groups with nested splits in all four directions, draggable/reorderable tabs, resizable dividers, and layouts restored when reopening the notebook. Different panes can show the same note in different modes, with a shared draft.
 - Relative Markdown links to other notes from the existing link dialog; open inside the app and update when notes/folders move or rename through the app.
@@ -53,6 +54,7 @@ Right-click a tab or use the split button beside the tabs to split left, right, 
 | Link or card | ⌘K |
 | Find and switch notes | ⌘P, then ↑ / ↓ and Return |
 | Find within document | ⌘F; Return / ⇧Return for next / previous |
+| Find and replace | ⌘⌥F; Return in the replacement field replaces the current match |
 | Print / Save as PDF | ⌘⇧P |
 | Larger / smaller / default document text | ⌘+ / ⌘− / ⌘0 |
 | Headings 1–4 | ⌘⌥1–4 |
@@ -70,6 +72,10 @@ Use **Format → Image…**, the `/image` command, or paste/drop an image into L
 Choose **File → Import from Linear…** or use the workspace menu. Connect with a personal API key that can read the relevant projects and documents. Select a project, preview a document, choose a destination folder, then import its Markdown. The source ID, project ID, and source URL are retained in frontmatter; the details sidebar links to the original. Importing the same source again opens the existing local copy, including after a rename, and preserves local edits. Disconnect removes the saved key and keeps imported notes.
 
 Imported remote images retain their URLs and require a connection. Images hosted at `uploads.linear.app` load through the saved key; the key is never passed to editor JavaScript, other image hosts, or redirected requests. Public HTTPS images load without that key. This version imports individual documents and does not sync changes back to Linear. [Linear API authentication](https://linear.app/developers/graphql) describes the supported personal-key authentication.
+
+In the details sidebar, **Save images locally** downloads the note's supported HTTPS Markdown images into `Attachments/` and replaces their references. Linear-hosted images need a connected key. Inline and reference-style images are supported; code examples and ordinary hyperlinks remain intact. If a download fails or the note changes during the operation, the note is kept unchanged. Unused downloaded attachments may remain, as with removed images.
+
+For a linked note, **Refresh from Linear…** shows the local and incoming Markdown before any change. **Replace local copy** updates the body while retaining local YAML properties; it stops if the file changed after the preview. **Keep both** saves an independent incoming copy with the original's source URL. The original retains its import identity. Remote images in a refreshed document can be saved locally again. Refresh is manual and does not push changes to Linear.
 
 ## Files and portability
 
@@ -109,7 +115,7 @@ Browser tests use the local Google Chrome installation on macOS. `npm run build`
 - Rich cards show a supplied title and URL. They do not fetch website metadata, thumbnails, or embedded media.
 - Raster images render in Live Preview and Reading. Unsupported or unavailable images show a placeholder. Math, diagrams, wikilinks, footnotes, and full Obsidian extensions remain outside this version. Arbitrary HTML is preserved as inert source blocks.
 - Callout fold markers are retained but callouts are always expanded. Properties use a simple YAML source editor; this is not a full typed property system.
-- No cloud sync, collaboration, version history, or iOS app yet. Linear import uses a personal key rather than OAuth and retains remote image references; remote assets are not copied into the notebook for offline use. The shared `NotesCore` and platform-independent editor are separated for future iOS reuse.
+- No cloud sync, collaboration, version history, or iOS app yet. Linear import uses a personal key rather than OAuth. Remote assets can be saved locally explicitly; HTML images, redirects, and unsupported image formats are excluded. The shared `NotesCore` and platform-independent editor are separated for future iOS reuse.
 - External changes are checked every two seconds. Simultaneous writes by editors that ignore file coordination still require care; test with a small notebook first. Search scans file content on demand; very large libraries/files and full accessibility coverage have not been validated.
 
 See [validation notes](docs/VALIDATION.md) and [third-party notices](docs/THIRD_PARTY_NOTICES.md).

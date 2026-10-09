@@ -158,7 +158,7 @@ private struct NotePaneContent: View {
                                 .background(tab.mode == mode ? Palette.control : .clear, in: RoundedRectangle(cornerRadius: 8))
                         }.buttonStyle(ChromeButtonStyle()).foregroundStyle(tab.mode == mode ? Palette.primary : Palette.muted).help(mode.title).accessibilityLabel(mode.title).accessibilityAddTraits(tab.mode == mode ? .isSelected : [])
                     }
-                }.padding(2).accessibilityLabel("Document mode")
+                }.padding(2).accessibilityElement(children: .contain).accessibilityLabel("Document mode")
                 Button { store.toggleBookmark(selected) } label: { Image(systemName: store.isBookmarked(selected) ? "bookmark.fill" : "bookmark").font(.system(size: 12)).foregroundStyle(store.isBookmarked(selected) ? Palette.accent : Palette.muted) }.buttonStyle(ChromeButtonStyle()).help("Bookmark note").accessibilityLabel("Bookmark note")
                 Menu {
                     ForEach(SplitDirection.allCases, id: \.self) { direction in
@@ -317,6 +317,7 @@ struct PaneSplitView: View {
     let first: AnyView
     let second: AnyView
     @State private var dragStart: Double?
+    @FocusState private var dividerFocused: Bool
     var body: some View {
         GeometryReader { geometry in
             let length = max(1, (horizontal ? geometry.size.width : geometry.size.height) - 7)
@@ -332,7 +333,13 @@ struct PaneSplitView: View {
         Rectangle().fill(Palette.sidebar)
             .frame(width: horizontal ? 7 : nil, height: horizontal ? nil : 7)
             .overlay { Rectangle().fill(Palette.line).frame(width: horizontal ? 1 : nil, height: horizontal ? nil : 1) }
+            .overlay { Rectangle().stroke(dividerFocused ? Palette.accent : .clear, lineWidth: 2) }
             .contentShape(Rectangle())
+            .focusable().focused($dividerFocused)
+            .onKeyPress(keys: horizontal ? [.leftArrow, .rightArrow] : [.upArrow, .downArrow]) { press in
+                resize(fraction + (press.key == .rightArrow || press.key == .downArrow ? 0.05 : -0.05)); finish()
+                return .handled
+            }
             .onHover { hover in if hover { (horizontal ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).push() } else { NSCursor.pop() } }
             .gesture(DragGesture(minimumDistance: 0).onChanged { value in
                 if dragStart == nil { dragStart = fraction }
@@ -340,6 +347,7 @@ struct PaneSplitView: View {
             }.onEnded { _ in dragStart = nil; finish() })
             .accessibilityLabel(horizontal ? "Resize panes horizontally" : "Resize panes vertically")
             .accessibilityValue("\(Int(fraction * 100)) percent")
+            .accessibilityHint(horizontal ? "Use Left and Right Arrow to resize by 5 percent." : "Use Up and Down Arrow to resize by 5 percent.")
             .accessibilityAdjustableAction { direction in resize(fraction + (direction == .increment ? 0.05 : -0.05)); finish() }
     }
 }

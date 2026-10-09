@@ -90,11 +90,15 @@ public struct LinearAPI: Sendable {
     }
 
     public func image(_ url: URL) async throws -> Data {
-        guard url.scheme == "https", url.host == "uploads.linear.app", url.user == nil, url.password == nil, url.port == nil || url.port == 443 else { throw LibraryError.invalidPath }
+        guard url.scheme == "https", url.host != nil, url.user == nil, url.password == nil, url.port == nil || url.port == 443 else { throw LibraryError.invalidPath }
         var request = URLRequest(url: url); request.timeoutInterval = 30
-        request.setValue(key, forHTTPHeaderField: "Authorization")
+        request.httpShouldHandleCookies = false
+        if url.host == "uploads.linear.app" {
+            guard !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !key.contains("\n"), !key.contains("\r") else { throw APIError(message: "Enter a valid Linear API key.") }
+            request.setValue(key, forHTTPHeaderField: "Authorization")
+        }
         let (bytes, response) = try await session.bytes(for: request, delegate: LinearNoRedirects())
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw APIError(message: "This Linear image could not be loaded. Check the connection and key permissions.") }
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw APIError(message: "This image could not be loaded. Check the connection and image permissions.") }
         guard response.expectedContentLength <= 20 * 1024 * 1024 else { throw LibraryError.invalidImage }
         var data = Data()
         for try await byte in bytes {

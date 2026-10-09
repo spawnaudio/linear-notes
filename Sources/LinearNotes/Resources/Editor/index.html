@@ -9,11 +9,19 @@
 </head>
 <body>
   <div id="find" class="popover" role="search" aria-label="Find in document" hidden>
-    <input id="find-text" aria-label="Find text" placeholder="Find in this note…">
-    <span id="find-count" role="status" aria-live="polite"></span>
-    <button id="find-previous" aria-label="Previous match" title="Previous match · ⇧Enter">↑</button>
-    <button id="find-next" aria-label="Next match" title="Next match · Enter">↓</button>
-    <button id="find-close" aria-label="Close find" title="Close · Escape">×</button>
+    <div class="find-row">
+      <button id="find-toggle" aria-label="Show replacement" aria-expanded="false" aria-controls="find-replacement" title="Find and replace · ⌘⌥F">›</button>
+      <textarea id="find-text" rows="1" aria-label="Find text" placeholder="Find in this note…"></textarea>
+      <span id="find-count" role="status" aria-live="polite"></span>
+      <button id="find-previous" aria-label="Previous match" title="Previous match · ⇧Enter">↑</button>
+      <button id="find-next" aria-label="Next match" title="Next match · Enter">↓</button>
+      <button id="find-close" aria-label="Close find" title="Close · Escape">×</button>
+    </div>
+    <div id="find-replacement" class="find-row" hidden>
+      <textarea id="replace-text" rows="1" aria-label="Replacement text" placeholder="Replace with…"></textarea>
+      <button id="replace-current" title="Replace current match · Enter">Replace</button>
+      <button id="replace-all">Replace all</button>
+    </div>
   </div>
   <main id="page">
     <div id="properties" aria-label="Document properties"></div>

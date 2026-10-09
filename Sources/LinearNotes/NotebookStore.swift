@@ -29,6 +29,8 @@ struct NoteHeading: Identifiable { let id: Int; let level: Int; let text: String
     @Published var searching = false
     @Published var quickOpenVisible = false { didSet { if quickOpenVisible { refreshSearch() } } }
     @Published var linearImportVisible = false
+    @Published var linearRefreshVisible = false
+    @Published var savingImages = false
     var headings: [NoteHeading] { get { activeTab.headings } set { activeTab.headings = newValue } }
     var activeHeading: Int { get { activeTab.activeHeading } set { activeTab.activeHeading = newValue } }
     var documentVersion: Int { get { activeTab.documentVersion } set { activeTab.documentVersion = newValue } }

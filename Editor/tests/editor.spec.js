@@ -454,6 +454,103 @@ test('search jumps, mode positions resume after reopening and state never become
   await expect(page.locator('#find')).toBeHidden();
 });
 
+test('replace is literal, folds Unicode across formatting, and each action is one undo step', async ({ page }) => {
+  await load(page, '# Replace\n\nKeep **safe** Café **plan** and *outside*.\n\nCafe plan, Cafe\u0301 plan, 😀 cafe plan.\n');
+  const original = await json(page);
+  await page.keyboard.press('Meta+Alt+f');
+  await expect(page.getByRole('button', { name: 'Hide replacement' })).toHaveAttribute('aria-expanded', 'true');
+  await page.getByRole('textbox', { name: 'Find text', exact: true }).fill('cafe plan');
+  await expect(page.locator('#find-count')).toHaveText('1 / 4');
+  await page.getByRole('textbox', { name: 'Replacement text', exact: true }).fill('<literal> *$&');
+  await page.keyboard.press('Enter');
+  const afterOne = await json(page);
+  await expect(page.locator('.tiptap strong')).toHaveText('safe');
+  await expect(page.locator('.tiptap em')).toHaveText('outside');
+  await expect(page.locator('.tiptap p').first()).toHaveText('Keep safe <literal> *$& and outside.');
+  await expect(page.locator('#find-count')).toHaveText('1 / 3');
+  await page.getByRole('button', { name: 'Replace all', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#find-count')).toHaveText('0 / 0');
+  await expect(page.getByRole('button', { name: 'Replace', exact: true })).toBeDisabled();
+  await expect(page.locator('.tiptap p').last()).toHaveText('<literal> *$&, <literal> *$&, 😀 <literal> *$&.');
+  await page.evaluate(() => window.notes.command('undo'));
+  expect(await json(page)).toEqual(afterOne);
+  await page.evaluate(() => window.notes.command('undo'));
+  expect(await json(page)).toEqual(original);
+  await page.setViewportSize({ width: 320, height: 650 });
+  expect(await page.locator('#find').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+});
+
+test('replace all uses original nonoverlapping matches and multiline Live replacements preserve hard breaks', async ({ page }) => {
+  await load(page, 'first  \nsecond and first  \nsecond.\n\n**catcat** cat.');
+  const original = await json(page);
+  await page.evaluate(() => window.notes.showFindAndReplace());
+  await page.getByRole('textbox', { name: 'Find text', exact: true }).fill('first\nsecond');
+  await expect(page.locator('#find-count')).toHaveText('1 / 2');
+  await page.getByRole('textbox', { name: 'Replacement text', exact: true }).fill('new\nline');
+  await page.getByRole('button', { name: 'Replace all', exact: true }).click();
+  expect(await page.locator('.tiptap p').first().innerText()).toBe('new\nline and new\nline.');
+  await expect(page.locator('.tiptap p').first().locator('br')).toHaveCount(2);
+  await page.getByRole('textbox', { name: 'Find text', exact: true }).fill('cat');
+  await page.getByRole('textbox', { name: 'Replacement text', exact: true }).fill('catcat');
+  await page.getByRole('button', { name: 'Replace all', exact: true }).click();
+  await expect(page.locator('.tiptap strong')).toHaveText('catcatcatcat');
+  await expect(page.locator('#find-count')).toHaveText('1 / 6');
+  await page.evaluate(() => { window.notes.command('undo'); window.notes.command('undo'); });
+  expect(await json(page)).toEqual(original);
+});
+
+test('Reading disables replacement and the action guard prevents Markdown changes', async ({ page }) => {
+  const original = '# Read\n\nCafé plan.\n';
+  await load(page, original);
+  await page.evaluate(() => window.notes.showFindAndReplace());
+  await page.getByRole('textbox', { name: 'Find text', exact: true }).fill('cafe');
+  await page.getByRole('textbox', { name: 'Replacement text', exact: true }).fill('Changed');
+  await page.evaluate(() => window.notes.setMode('reading'));
+  await expect(page.getByRole('button', { name: 'Hide replacement' })).toBeDisabled();
+  await expect(page.getByRole('textbox', { name: 'Replacement text', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Replace', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Replace all', exact: true })).toBeDisabled();
+  await page.evaluate(() => { document.getElementById('replace-current').onclick(); document.getElementById('replace-all').onclick(); window.notes.showFindAndReplace(); });
+  expect(await markdown(page)).toBe(original);
+  expect(await page.evaluate(() => window.messages.filter(m => m.type === 'change'))).toHaveLength(0);
+  await page.evaluate(() => window.notes.setMode('source'));
+  await expect(page.getByRole('button', { name: 'Replace', exact: true })).toBeEnabled();
+});
+
+test('Source replacement and native undo preserve exact frontmatter, whitespace and line endings', async ({ page }) => {
+  const original = '\uFEFF---\r\ntitle: "Café"\r\nnested:\r\n  keep: [one, two]\r\n---\r\n# Source\r\n\r\n  Café\r\nplan\tCafe\u0301\r\nplan\r\n\r\n**untouched**  \r\n';
+  await load(page, original, 'source');
+  await page.evaluate(() => window.notes.showFindAndReplace());
+  await page.getByRole('textbox', { name: 'Find text', exact: true }).fill('cafe\nplan');
+  await expect(page.locator('#find-count')).toHaveText('1 / 2');
+  expect(await page.locator('#source').evaluate(el => el.value.slice(el.selectionStart, el.selectionEnd))).toBe('Café\nplan');
+  await page.getByRole('textbox', { name: 'Replacement text', exact: true }).fill('$& [literal]\nnext');
+  await page.getByRole('button', { name: 'Replace', exact: true }).click();
+  const literalOne = original.replace('Café\r\nplan', () => '$& [literal]\nnext');
+  expect(await markdown(page)).toBe(literalOne);
+  await page.getByRole('button', { name: 'Replace all', exact: true }).click();
+  const literalAll = literalOne.replace('Cafe\u0301\r\nplan', () => '$& [literal]\nnext');
+  expect(await markdown(page)).toBe(literalAll);
+  await page.getByRole('button', { name: 'Close find' }).click();
+  await page.keyboard.press('Meta+z');
+  expect(await markdown(page)).toBe(literalOne);
+  await page.keyboard.press('Meta+z');
+  expect(await markdown(page)).toBe(original);
+  await page.keyboard.press('Meta+Shift+z');
+  expect(await markdown(page)).toBe(literalOne);
+  await page.keyboard.press('Meta+Shift+z');
+  expect(await markdown(page)).toBe(literalAll);
+  await page.keyboard.press('Meta+Alt+f');
+  await page.getByRole('textbox', { name: 'Find text', exact: true }).fill('title: "cafe"');
+  await page.getByRole('textbox', { name: 'Replacement text', exact: true }).fill('');
+  await page.getByRole('button', { name: 'Replace', exact: true }).click();
+  expect(await markdown(page)).toBe(literalAll.replace('title: "Café"', ''));
+  await page.getByRole('button', { name: 'Close find' }).click();
+  await page.keyboard.press('Meta+z');
+  expect(await markdown(page)).toBe(literalAll);
+});
+
 test('note picker inserts portable relative links and keyboard reading opens the native note', async ({ page }) => {
   await load(page, '# Index\n\nA reference.');
   await page.evaluate(() => window.notes.setNotes([{ title: 'Café plan', path: 'Projects/Café plan.md', reference: 'Projects/Caf%C3%A9%20plan.md' }]));

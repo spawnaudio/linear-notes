@@ -92,6 +92,7 @@ import UniformTypeIdentifiers
     }
     func find(_ term: String) { webView?.callAsyncJavaScript("window.notes.find(term)", arguments: ["term": term], in: nil, in: .page, completionHandler: nil) }
     func showFind() { webView?.evaluateJavaScript("window.notes.showFind()", completionHandler: nil) }
+    func showFindAndReplace() { webView?.evaluateJavaScript("window.notes.showFindAndReplace()", completionHandler: nil) }
     func textSize(_ size: Int) { webView?.callAsyncJavaScript("window.notes.textSize(size)", arguments: ["size": size], in: nil, in: .page, completionHandler: nil) }
     func printDocument() {
         guard !printing else { return }

@@ -27,6 +27,7 @@ import AppKit
             }
             CommandMenu("Find") {
                 Button("Find in Document…") { store.bridge?.showFind() }.keyboardShortcut("f").disabled(store.selected == nil)
+                Button("Find and Replace…") { store.bridge?.showFindAndReplace() }.keyboardShortcut("f", modifiers: [.command, .option]).disabled(store.selected == nil || store.mode == .reading)
             }
             CommandMenu("Format") {
                 Button("Bold") { store.bridge?.command("bold") }.keyboardShortcut("b")
@@ -73,7 +74,7 @@ import AppKit
                 }
                 Button("Keyboard Shortcuts") {
                     let alert = NSAlert(); alert.messageText = "Make yourself at home."
-                    alert.informativeText = "⌘B  Bold     ⌘I  Italic     ⌘U  Underline\n⌘E  Inline code     ⌘K  Link or card\n⌘P  Find and switch notes\n⌘F  Find in document     ⌘⇧P  Print / Save PDF\n⌘+ / −  Document text size     ⌘0  Default size\n⌘⇧S  Strikethrough\n⌘⇧7 / 8 / 9  Checklist / bullets / numbers\n⌘⌥1–4  Heading levels\n⌘⇧\\  Code block\n⌘N  New note     ⌘⇧N  New folder\n⌘O  Open notes folder     ⌘S  Save\n⌘\\  Toggle sidebar     ⌘⌥\\  Details and outline\n⌃⌘1 / 2 / 3  Live / reading / source\n\nType / at the start of a paragraph for blocks.\nDrag near a row’s edge to reorder. Drop in the middle of a folder to move inside it.\nRight-click any item to pin or bookmark it.\nRich cards: click to select, then click again to open."
+                    alert.informativeText = "⌘B  Bold     ⌘I  Italic     ⌘U  Underline\n⌘E  Inline code     ⌘K  Link or card\n⌘P  Find and switch notes\n⌘F  Find in document     ⌘⌥F  Find and replace\n⌘⇧P  Print / Save PDF\n⌘+ / −  Document text size     ⌘0  Default size\n⌘⇧S  Strikethrough\n⌘⇧7 / 8 / 9  Checklist / bullets / numbers\n⌘⌥1–4  Heading levels\n⌘⇧\\  Code block\n⌘N  New note     ⌘⇧N  New folder\n⌘O  Open notes folder     ⌘S  Save\n⌘\\  Toggle sidebar     ⌘⌥\\  Details and outline\n⌃⌘1 / 2 / 3  Live / reading / source\n\nType / at the start of a paragraph for blocks.\nDrag near a row’s edge to reorder. Drop in the middle of a folder to move inside it.\nRight-click any item to pin or bookmark it.\nRich cards: click to select, then click again to open."
                     alert.runModal()
                 }
             }
