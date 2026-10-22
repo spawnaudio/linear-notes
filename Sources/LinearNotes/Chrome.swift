@@ -85,11 +85,13 @@ struct SectionHeader: View {
 
     ⌘B  Bold     ⌘I  Italic     ⌘U  Underline     ⌘⇧S  Strikethrough
     ⌘E  Inline code     ⌘⇧\\  Code block
-    ⌘⇧7 / 8 / 9  Checklist / bullets / numbers
+    ⌘⇧7 / 8 / 9  Checklist / bullets / numbers     ⌘↩  Check item (⌘⇧↩ with nested)
     ⌘⌥1–4  Heading levels     ⌃⌘1 / 2 / 3  Live / reading / source
     ⌘+ / −  Document text size     ⌘0  Default size     ⌘⇧P  Print / Save PDF
 
-    Type / for blocks, @ to link a note, # to ### for headings, [] for a checklist.
+    Type / for blocks, @ to link a note, # to #### for headings, [] for a checklist,
+    > for a quote, >>> for a collapsible section, and |-- for a table.
+    Press Return in the title to rename the note; ↑ on the first line returns to the title.
     Drag near a row’s edge to reorder. Drop in the middle of a folder to move inside it.
     """
     alert.runModal()

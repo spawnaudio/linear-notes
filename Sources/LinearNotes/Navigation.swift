@@ -75,6 +75,11 @@ extension NotebookStore {
         return "Edited " + date.formatted(.dateTime.month(.abbreviated).day())
     }
 
+    func fileDetails(_ path: String) -> (size: String, created: String?)? {
+        guard let url = try? library?.url(for: path), let values = try? url.resourceValues(forKeys: [.fileSizeKey, .creationDateKey]) else { return nil }
+        return (ByteCountFormatter.string(fromByteCount: Int64(values.fileSize ?? 0), countStyle: .file), values.creationDate?.formatted(.dateTime.month(.abbreviated).day().year()))
+    }
+
     /// Copies the note's file URL, the local equivalent of Linear's shareable document link.
     /// Links between notes are still inserted with `@` or the link dialog, which keep them relative.
     func copyLink(_ path: String) {

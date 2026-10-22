@@ -294,6 +294,15 @@ struct NoteHeading: Identifiable { let id: Int; let level: Int; let text: String
         let ext = (item.name as NSString).pathExtension
         move(item.path, parent: item.parent, newName: item.isFolder ? name : name + "." + ext)
     }
+    /// Renames a note from its in-document title, as Linear does. A rejected name reloads the note so the title shows the real file name again.
+    func retitle(_ path: String, to title: String) {
+        afterSave { [self] in
+            let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let item = items.first(where: { $0.path == path && !$0.isFolder }), !name.isEmpty, name != item.title else { return }
+            finishMove(path, parent: item.parent, before: nil, newName: name + "." + (item.name as NSString).pathExtension)
+            if items.contains(where: { $0.path == path }) { for tab in allTabs where tab.selected == path { tab.documentVersion += 1 } }
+        }
+    }
     func move(_ path: String, parent: String, before: String? = nil, newName: String? = nil) {
         afterSave { [self] in finishMove(path, parent: parent, before: before, newName: newName) }
     }

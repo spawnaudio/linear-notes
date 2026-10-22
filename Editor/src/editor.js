@@ -1,4 +1,4 @@
-import { Editor, Node, Extension, mergeAttributes } from '@tiptap/core';
+import { Editor, Node, Extension, InputRule, mergeAttributes } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from '@tiptap/markdown';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -7,7 +7,8 @@ import TaskItem from '@tiptap/extension-task-item';
 import { TableKit } from '@tiptap/extension-table';
 import Image from '@tiptap/extension-image';
 import Paragraph from '@tiptap/extension-paragraph';
-import { Plugin, PluginKey } from '@tiptap/pm/state';
+import CodeBlock from '@tiptap/extension-code-block';
+import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { closeHistory } from '@tiptap/pm/history';
 
@@ -20,9 +21,32 @@ let editor, slashRange = null, slashIndex = 0, slashMatches = [], linkRange = nu
 let calloutPosition = null, calloutColour = '', imageAltPosition = null, uploadRange = null, imageRequest = 0, activeHeading = -1;
 const imageRequests = new Map();
 let noteLinks = [], positions = {}, viewTimer, printing = false;
+let title = '', refocus = '', icons = {}, menuKind = 'slash', menuAnchor = null, menuQuery = '', outlineKey = '', toastTimer;
 let findMatches = [], findIndex = 0;
 const sourceVersions = new Map();
 const sourceText = text => text.replace(/\r\n?/g, '\n');
+// SF Symbols arrive from the native host as template masks; text glyphs stand in until then and in the browser harness.
+function icon(name, fallback = '') {
+  const element = document.createElement('span'); element.className = 'icon'; element.dataset.icon = name; element.dataset.fallback = fallback;
+  element.setAttribute('aria-hidden', 'true'); drawIcon(element); return element;
+}
+function drawIcon(element) {
+  const mask = icons[element.dataset.icon];
+  element.classList.toggle('masked', Boolean(mask)); element.style.setProperty('--mask', mask ? `url("${mask}")` : '');
+  element.textContent = mask ? '' : element.dataset.fallback || '';
+}
+function setIcons(next) {
+  icons = Object.fromEntries(Object.entries(next || {}).filter(([name, url]) => /^[a-z.]+$/.test(name) && /^data:image\/png;base64,[a-z\d+/=]+$/i.test(url)));
+  for (const [name, url] of Object.entries(icons)) document.documentElement.style.setProperty(`--icon-${name.replace(/\./g, '-')}`, `url("${url}")`);
+  document.documentElement.classList.toggle('symbols', Object.keys(icons).length > 0);
+  document.querySelectorAll('.icon[data-icon]').forEach(drawIcon);
+}
+document.querySelectorAll('.icon[data-icon]').forEach(drawIcon);
+function copyText(text, message = 'Copied to clipboard') {
+  if (window.webkit?.messageHandlers?.notes) send('copy', { text }); else navigator.clipboard?.writeText(text).catch(() => {});
+  const toast = $('toast'); toast.textContent = message; toast.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.hidden = true; }, 1600);
+}
 const FindHighlights = Extension.create({
   name: 'findHighlights',
   addProseMirrorPlugins() { return [new Plugin({ key: new PluginKey('findHighlights'), props: {
@@ -165,7 +189,7 @@ const Callout = Node.create({
       const draw = next => {
         dom.dataset.kind = next.attrs.kind;
         const colour = /^#[\da-f]{6}$/i.test(next.attrs.colour) ? next.attrs.colour : '';
-        dom.style.setProperty('--custom-callout', colour || 'var(--callout-color)');
+        dom.style.setProperty('--custom-callout', colour || 'var(--callout-color)'); dom.dataset.custom = String(Boolean(colour));
         icon.textContent = next.attrs.icon || ({ tip: '💡', warning: '⚠', caution: '⚠', important: '★' })[next.attrs.kind] || 'ⓘ';
         icon.disabled = mode !== 'live'; title.textContent = next.attrs.title; title.hidden = !next.attrs.title;
       };
@@ -229,13 +253,13 @@ const RichLink = Node.create({
     return ({ node, editor: ed, getPos }) => {
       const dom = document.createElement('div'); dom.className = 'rich-card'; dom.tabIndex = 0; dom.role = 'button';
       dom.setAttribute('aria-label', `${node.attrs.title}. Click to select, click again to open.`);
-      const icon = document.createElement('span'); icon.className = 'card-icon'; icon.textContent = '↗';
+      const badge = document.createElement('span'); badge.className = 'card-icon'; badge.append(icon('globe', '↗'));
       const copy = document.createElement('span'); copy.className = 'card-copy';
       const title = document.createElement('span'); title.className = 'card-title'; title.textContent = node.attrs.title || node.attrs.url;
       const domain = document.createElement('span'); domain.className = 'card-domain';
       try { const url = new URL(node.attrs.url); domain.textContent = url.hostname.replace(/^www\./, '') + (url.pathname !== '/' ? url.pathname : ''); } catch { domain.textContent = node.attrs.url; }
-      const arrow = document.createElement('span'); arrow.className = 'card-arrow'; arrow.textContent = '↗';
-      copy.append(title, domain); dom.append(icon, copy, arrow);
+      const arrow = icon('arrow.up.right', '↗'); arrow.classList.add('card-arrow');
+      copy.append(title, domain); dom.append(badge, copy, arrow);
       dom.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); });
       dom.addEventListener('click', e => {
         e.preventDefault(); e.stopPropagation();
@@ -261,6 +285,126 @@ const RawHTML = Node.create({
   markdownTokenName: 'html',
   parseMarkdown: token => ({ type: 'rawHTML', attrs: { source: token.raw || token.text } }),
   renderMarkdown: node => node.attrs.source
+});
+
+// Collapsible sections are stored as HTML <details>, which other Markdown apps also render.
+const escapeHTML = text => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const unescapeHTML = text => text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+function detailsNode(schema, summary, blocks) {
+  return schema.nodes.details.create({ open: true }, [
+    schema.nodes.detailsSummary.create(null, summary ? schema.text(summary) : null),
+    schema.nodes.detailsContent.create(null, blocks.length ? blocks : schema.nodes.paragraph.create())
+  ]);
+}
+const DetailsSummary = Node.create({
+  name: 'detailsSummary', content: 'text*', marks: '', defining: true, isolating: true, selectable: false,
+  parseHTML() { return [{ tag: 'div[data-summary]' }]; },
+  renderHTML() { return ['div', { class: 'details-summary', 'data-summary': '', 'data-placeholder': 'Collapsible section' }, 0]; }
+});
+const DetailsContent = Node.create({
+  name: 'detailsContent', content: 'block+', defining: true, selectable: false,
+  parseHTML() { return [{ tag: 'div[data-details-content]' }]; },
+  renderHTML() { return ['div', { class: 'details-content', 'data-details-content': '' }, 0]; }
+});
+const Details = Node.create({
+  name: 'details', group: 'block', content: 'detailsSummary detailsContent', defining: true,
+  addAttributes() { return { open: { default: true } }; },
+  parseHTML() { return [{ tag: 'div[data-details]' }]; },
+  renderHTML() { return ['div', { class: 'details', 'data-details': '' }, 0]; },
+  addNodeView() {
+    return ({ node, editor: ed, getPos }) => {
+      const dom = document.createElement('div'); dom.className = 'details';
+      const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'details-toggle'; toggle.contentEditable = 'false';
+      toggle.append(icon('chevron.right', '›'));
+      const contentDOM = document.createElement('div'); contentDOM.className = 'details-body';
+      let open = node.attrs.open, current = node;
+      const draw = () => { dom.classList.toggle('open', open); toggle.setAttribute('aria-expanded', String(open)); toggle.setAttribute('aria-label', open ? 'Collapse section' : 'Expand section'); };
+      toggle.onmousedown = event => event.preventDefault();
+      // Live mode keeps the state in the file, as checkboxes do; Reading only changes the view.
+      toggle.onclick = () => {
+        open = !open; draw();
+        if (mode === 'live' && typeof getPos() === 'number') ed.view.dispatch(ed.state.tr.setNodeMarkup(getPos(), undefined, { ...current.attrs, open }));
+      };
+      dom.append(toggle, contentDOM); draw();
+      return { dom, contentDOM,
+        update: next => { if (next.type.name !== 'details') return false; if (next.attrs.open !== current.attrs.open) { open = next.attrs.open; draw(); } current = next; return true; },
+        stopEvent: event => toggle.contains(event.target), ignoreMutation: mutation => toggle.contains(mutation.target) || mutation.target === dom && mutation.type === 'attributes' };
+    };
+  },
+  addInputRules() {
+    return [new InputRule({ find: /^>>>\s$/, handler: ({ state, range }) => {
+      const $start = state.doc.resolve(range.from);
+      if ($start.parent.type.name !== 'paragraph' || $start.parent.textContent !== '>>>') return null;
+      const from = $start.before(), tr = state.tr;
+      if (!$start.node($start.depth - 1).canReplaceWith($start.index($start.depth - 1), $start.index($start.depth - 1) + 1, state.schema.nodes.details)) return null;
+      tr.replaceWith(from, $start.after(), detailsNode(state.schema, '', [])); tr.setSelection(TextSelection.create(tr.doc, from + 2));
+    } })];
+  },
+  addKeyboardShortcuts() {
+    return { Enter: () => {
+      const { state } = this.editor, { $from, empty } = state.selection;
+      if (!empty || $from.parent.type.name !== 'detailsSummary') return false;
+      const details = $from.node($from.depth - 1), position = $from.before($from.depth - 1), tr = state.tr;
+      if (!details.attrs.open) tr.setNodeMarkup(position, undefined, { ...details.attrs, open: true });
+      this.editor.view.dispatch(tr.setSelection(TextSelection.create(tr.doc, $from.after() + 2)).scrollIntoView()); return true;
+    }};
+  },
+  markdownTokenizer: {
+    name: 'details', level: 'block', start: src => src.search(/^<details[\s>]/m),
+    tokenize(src, _tokens, lexer) {
+      const opening = /^<details( open)?>\s*<summary>([^\n]*?)<\/summary>[ \t]*\n/.exec(src);
+      if (!opening) return;
+      const tags = /^<details[\s>]|^<\/details>[ \t]*$/gm; tags.lastIndex = opening[0].length;
+      for (let depth = 1, tag; (tag = tags.exec(src));) {
+        depth += tag[0].startsWith('</') ? -1 : 1;
+        if (depth) continue;
+        const end = src.indexOf('\n', tag.index);
+        return { type: 'details', raw: src.slice(0, end === -1 ? src.length : end + 1), open: Boolean(opening[1]), summary: unescapeHTML(opening[2]),
+          tokens: lexer.blockTokens(src.slice(opening[0].length, tag.index)) };
+      }
+    }
+  },
+  parseMarkdown(token, h) {
+    const content = h.parseChildren(token.tokens);
+    return { type: 'details', attrs: { open: token.open }, content: [
+      { type: 'detailsSummary', content: token.summary ? [{ type: 'text', text: token.summary }] : [] },
+      { type: 'detailsContent', content: content.length ? content : [{ type: 'paragraph' }] }
+    ] };
+  },
+  renderMarkdown(node, h) {
+    const [summary, content] = node.content || [];
+    const text = (summary?.content || []).map(child => child.text || '').join('');
+    return `<details${node.attrs?.open ? ' open' : ''}>\n<summary>${escapeHTML(text)}</summary>\n\n${h.renderChildren(content?.content || [], '\n\n').trimEnd()}\n\n</details>`;
+  }
+});
+function insertDetails() {
+  const { state } = editor, { $from, $to } = state.selection, range = $from.blockRange($to);
+  if (!range || !range.parent.canReplaceWith(range.startIndex, range.endIndex, state.schema.nodes.details)) return;
+  const blocks = []; for (let index = range.startIndex; index < range.endIndex; index++) blocks.push(range.parent.child(index));
+  const [first, ...rest] = blocks, summary = first?.type.name === 'paragraph' || first?.type.name === 'heading' ? first.textContent : '';
+  const tr = state.tr.replaceWith(range.start, range.end, detailsNode(state.schema, summary, first && (summary || !first.textContent) && first.isTextblock ? rest : blocks));
+  editor.view.dispatch(tr.setSelection(TextSelection.create(tr.doc, range.start + 2 + summary.length)).scrollIntoView()); editor.commands.focus();
+}
+
+// Linear's code block: a quiet panel with the language and a copy button on hover.
+const CodeBlockView = CodeBlock.extend({
+  addNodeView() {
+    return ({ node }) => {
+      const dom = document.createElement('div'); dom.className = 'code-block';
+      const tools = document.createElement('div'); tools.className = 'code-tools'; tools.contentEditable = 'false';
+      const language = document.createElement('span'); language.className = 'code-language';
+      const copy = document.createElement('button'); copy.type = 'button'; copy.className = 'code-copy'; copy.title = 'Copy code'; copy.setAttribute('aria-label', 'Copy code');
+      copy.append(icon('doc.on.doc', '⧉'));
+      const pre = document.createElement('pre'), code = document.createElement('code'); pre.append(code);
+      let current = node;
+      copy.onmousedown = event => event.preventDefault(); copy.onclick = () => copyText(current.textContent, 'Code copied');
+      tools.append(language, copy); dom.append(tools, pre);
+      const draw = next => { current = next; language.textContent = next.attrs.language || ''; code.className = next.attrs.language ? `language-${next.attrs.language}` : ''; };
+      draw(node);
+      return { dom, contentDOM: code, update: next => { if (next.type.name !== 'codeBlock') return false; draw(next); return true; },
+        stopEvent: event => tools.contains(event.target), ignoreMutation: mutation => tools.contains(mutation.target) };
+    };
+  }
 });
 
 function imageURL(src) {
@@ -390,14 +534,34 @@ const LinearKeys = Extension.create({
     'Mod-Shift-\\': () => this.editor.commands.toggleCodeBlock(),
     'Mod-k': () => { if (mode === 'live' && !editor.state.selection.empty) showLink(); else send('quickOpen'); return true; },
     'Mod-Alt-0': () => this.editor.commands.setParagraph(),
+    'Mod-Enter': () => toggleTask(false),
+    'Mod-Shift-Enter': () => toggleTask(true),
     ...Object.fromEntries([1, 2, 3, 4].map(level => [`Mod-Alt-${level}`, () => this.editor.commands.toggleHeading({ level })]))
-  }; }
+  }; },
+  addInputRules() {
+    return [new InputRule({ find: /^\|--\s$/, handler: ({ range, chain }) => { chain().deleteRange(range).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(); } })];
+  }
 });
+// ⌘↩ checks the current checklist item, as in Linear; ⌘⇧↩ also sets its nested items.
+function toggleTask(nested) {
+  if (mode !== 'live') return false;
+  const { $from } = editor.state.selection;
+  for (let depth = $from.depth; depth > 0; depth--) {
+    const node = $from.node(depth);
+    if (node.type.name !== 'taskItem') continue;
+    const checked = !node.attrs.checked, start = $from.before(depth), tr = editor.state.tr.setNodeMarkup(start, undefined, { ...node.attrs, checked });
+    if (nested) node.descendants((child, offset) => { if (child.type.name === 'taskItem') tr.setNodeMarkup(start + 1 + offset, undefined, { ...child.attrs, checked }); });
+    editor.view.dispatch(tr); return true;
+  }
+  return false;
+}
 
 function makeEditor(markdown) {
   const instance = new Editor({
     element: $('editor'),
-    extensions: [StarterKit.configure({ paragraph: false, heading: { levels: [1, 2, 3, 4, 5, 6] }, link: { openOnClick: false, autolink: true, isAllowedUri: (url, context) => context.defaultValidate(url) || relativeNote(url) }, trailingNode: false }), ImageParagraph, Markdown, Placeholder.configure({ placeholder: 'Start writing, or type / for commands…' }), TaskList, TaskItem.configure({ nested: true, HTMLAttributes: { 'data-type': 'taskItem' } }), TableKit, SafeImage.configure({ allowBase64: true }), Callout, RichLink, RawHTML, LinearKeys, FindHighlights],
+    extensions: [StarterKit.configure({ paragraph: false, codeBlock: false, heading: { levels: [1, 2, 3, 4, 5, 6] }, link: { openOnClick: false, autolink: true, isAllowedUri: (url, context) => context.defaultValidate(url) || relativeNote(url) }, trailingNode: false }), ImageParagraph, CodeBlockView, Markdown,
+      Placeholder.configure({ includeChildren: true, showOnlyCurrent: false, placeholder: ({ node }) => node.type.name === 'detailsSummary' ? 'Collapsible section' : 'Start writing, or type / for commands…' }),
+      TaskList, TaskItem.configure({ nested: true, HTMLAttributes: { 'data-type': 'taskItem' } }), TableKit, SafeImage.configure({ allowBase64: true }), Callout, RichLink, RawHTML, Details, DetailsSummary, DetailsContent, LinearKeys, FindHighlights],
     content: markdown, contentType: 'markdown', editable: mode !== 'reading',
     editorProps: {
       attributes: { 'aria-label': mode === 'reading' ? 'Read document' : 'Edit document', role: 'textbox', 'aria-multiline': 'true', spellcheck: 'true', tabindex: '0' },
@@ -421,6 +585,10 @@ function makeEditor(markdown) {
           if (['ArrowDown', 'ArrowUp'].includes(event.key)) { event.preventDefault(); slashIndex = (slashIndex + (event.key === 'ArrowDown' ? 1 : slashMatches.length - 1)) % slashMatches.length; drawSlash(); return true; }
           if (event.key === 'Enter' && slashMatches.length) { event.preventDefault(); chooseSlash(slashMatches[slashIndex]); return true; }
           if (event.key === 'Escape') { hideSlash(); return true; }
+        }
+        // As in Linear, moving up from the first line reaches the title.
+        if (event.key === 'ArrowUp' && !event.shiftKey && !event.metaKey && editor.state.selection.$from.index(0) === 0 && _view.endOfTextblock('up') && $('title').isContentEditable) {
+          event.preventDefault(); focusTitle(); return true;
         }
         return false;
       }
@@ -446,14 +614,29 @@ function splitFrontmatter(text) {
 function propertiesText() { return splitFrontmatter(currentMarkdown)[0].replace(/^\uFEFF?---\r?\n/, '').replace(/(?:^|\r?\n)(?:---|\.\.\.)[ \t]*\r?\n?$/, ''); }
 function drawProperties() {
   $('properties').replaceChildren();
-  const text = propertiesText();
+  const text = propertiesText(), chips = [];
   for (const match of text.matchAll(/^(\w[\w -]*):[ \t]*(.*)$/gm)) {
     const button = document.createElement('button'); button.className = 'property';
-    const key = document.createElement('span'); key.textContent = match[1];
+    const key = document.createElement('span'); key.className = 'property-key'; key.textContent = match[1];
     const value = document.createElement('span'); value.className = 'property-value'; value.textContent = match[2].replace(/^['"]|['"]$/g, '').replace(/^\[|\]$/g, '').replace(/,\s*/g, ' · ') || '…';
-    button.append(key, value); button.onclick = showProperties; button.disabled = mode === 'reading'; $('properties').append(button);
+    button.append(key, value); button.onclick = showProperties; button.disabled = mode === 'reading'; chips.push(button);
   }
-  if (mode === 'live') { const add = document.createElement('button'); add.className = 'property-add'; add.textContent = frontmatter ? '+ Property' : '+ Add properties'; add.onclick = showProperties; $('properties').append(add); }
+  if (chips.length) { const label = document.createElement('span'); label.className = 'properties-label'; label.textContent = 'Properties'; $('properties').append(label, ...chips); }
+  if (mode === 'live') {
+    const add = document.createElement('button'); add.className = `property-add${chips.length ? '' : ' empty'}`; add.onclick = showProperties;
+    add.setAttribute('aria-label', chips.length ? 'Add property' : 'Add properties'); add.title = add.getAttribute('aria-label');
+    add.append(icon('plus', '+')); if (!chips.length) add.append('Add properties');
+    $('properties').append(add);
+  }
+  drawIconTile();
+}
+// The tile shows an `icon:` property when it is an emoji or a bundled symbol name.
+function drawIconTile() {
+  const value = (propertyRows().find(row => row.name === 'icon')?.value || '').replace(/^['"]|['"]$/g, '').trim();
+  const tile = $('doc-icon'); tile.replaceChildren();
+  if (icons[value]) tile.append(icon(value)); else if (value && !/^[\w.]+$/.test(value) && cleanIcon(value)) { tile.textContent = cleanIcon(value); tile.classList.add('emoji'); return; }
+  else tile.append(icon('doc.text.fill', '▤'));
+  tile.classList.remove('emoji');
 }
 function showProperties() { if (mode === 'reading') return; $('properties-source').value = propertiesText(); $('properties-dialog').showModal(); }
 $('properties-dialog').addEventListener('close', () => {
@@ -475,22 +658,61 @@ function propertyRows() {
   return rows;
 }
 function reportStats() { send('properties', { id: documentID, text: propertiesText(), rows: propertyRows() }); const body = splitFrontmatter(currentMarkdown)[1]; send('stats', { id: documentID, words: body.trim().split(/\s+/).filter(Boolean).length }); }
+// The title is the note's file name, renamed in place through the native host as in Linear.
+function drawTitle() {
+  const field = $('title'), editable = Boolean(documentID) && mode !== 'reading';
+  $('title-block').hidden = !documentID;
+  if (document.activeElement !== field) field.textContent = title;
+  field.classList.toggle('empty', !field.textContent);
+  field.contentEditable = editable ? 'plaintext-only' : 'false'; field.setAttribute('aria-readonly', String(!editable));
+}
+function focusTitle(selectAll = false) {
+  const field = $('title'); field.focus();
+  const range = document.createRange(); range.selectNodeContents(field); if (!selectAll) range.collapse(false);
+  const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+}
+function focusBody() {
+  if (mode === 'source') { $('source').focus(); $('source').setSelectionRange(frontmatter.length, frontmatter.length); }
+  else if (mode === 'live') editor.commands.focus('start');
+}
+function commitTitle(moveToBody) {
+  const field = $('title'), next = field.textContent.replace(/[\r\n\t]+/g, ' ').replace(/[\/:]/g, '-').replace(/^[\s.]+/, '').trim().slice(0, 200);
+  if (!next || mode === 'reading' || !documentID) { field.textContent = title; field.classList.toggle('empty', !title); }
+  else if (next !== title) { title = next; field.textContent = next; if (moveToBody) refocus = next; send('rename', { id: documentID, title: next }); }
+  if (moveToBody) focusBody();
+}
+$('title').addEventListener('keydown', event => {
+  if (event.isComposing) return;
+  if (event.key === 'Enter' || event.key === 'ArrowDown' && window.getSelection().focusOffset >= ($('title').textContent || '').length) { event.preventDefault(); commitTitle(true); }
+  if (event.key === 'Escape') { event.preventDefault(); $('title').textContent = title; focusBody(); }
+});
+$('title').addEventListener('blur', () => commitTitle(false));
+$('title').addEventListener('input', () => $('title').classList.toggle('empty', !$('title').textContent));
+$('title').addEventListener('paste', event => {
+  event.preventDefault(); document.execCommand('insertText', false, (event.clipboardData?.getData('text/plain') || '').replace(/\s+/g, ' '));
+});
 function loadDocument(payload) {
   clearTimeout(viewTimer);
+  if (document.activeElement === $('title')) $('title').blur();
   loading = true; documentID = payload.id; currentMarkdown = payload.markdown; mode = payload.mode || 'live';
+  title = typeof payload.title === 'string' ? payload.title : decodeURIComponent(documentID.split('/').at(-1) || '').replace(/\.(md|markdown)$/i, '');
   positions = payload.state?.positions || {}; noteLinks = payload.notes || []; $('find').hidden = true; findMatches = []; sourceVersions.clear(); toggleReplacement(false);
   assetBase = payload.assetBase || ''; imageRequests.clear(); activeHeading = -1;
   for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close('cancel');
   [frontmatter] = splitFrontmatter(currentMarkdown);
   editor?.destroy(); $('editor').replaceChildren(); editor = makeEditor(splitFrontmatter(currentMarkdown)[1]);
-  applyMode(); hideSlash(); $('bubble').hidden = true; textSize(payload.textSize || 15); restorePosition(positions[mode]); loading = false; reportStats(); reportOutline();
-  if (payload.focus) editor.commands.focus('start'); if (payload.find) showFind(payload.find, false);
+  applyMode(); hideSlash(); hideHeadingHandle(); $('bubble').hidden = true; textSize(payload.textSize || 15); restorePosition(positions[mode]); loading = false; reportStats(); reportOutline();
+  if (payload.focus && /^Untitled( \d+)?$/.test(title) && mode !== 'reading') focusTitle(true);
+  else if (payload.focus) editor.commands.focus('start');
+  else if (refocus && refocus === title) window.notes.focus();
+  refocus = '';
+  if (payload.find) showFind(payload.find, false);
 }
 function applyMode() {
   document.body.dataset.mode = mode;
   $('source').hidden = mode !== 'source'; $('editor').hidden = mode === 'source';
   $('properties').hidden = mode === 'source';
-  $('source').value = currentMarkdown; resizeSource(); editor.setEditable(mode === 'live', false); drawProperties();
+  $('source').value = currentMarkdown; resizeSource(); editor.setEditable(mode === 'live', false); drawProperties(); drawTitle();
   editor.view.dom.setAttribute('aria-label', mode === 'reading' ? 'Read document' : 'Edit document');
   editor.view.dom.setAttribute('aria-readonly', String(mode === 'reading'));
   document.querySelectorAll('input[type=checkbox]').forEach(input => input.disabled = mode === 'reading');
@@ -508,55 +730,96 @@ $('source').addEventListener('select', reportView);
 $('source').addEventListener('keydown', e => { if (e.key === 'Tab') { e.preventDefault(); document.execCommand('insertText', false, '  '); } });
 
 const slashCommands = [
-  { id: 'paragraph', icon: 'T', name: 'Text', desc: 'Just start writing' },
-  ...[1, 2, 3, 4].map(level => ({ id: `h${level}`, icon: `H${level}`, name: `Heading ${level}`, desc: ['A big, clear heading', 'A section heading', 'A smaller heading', 'A compact heading'][level - 1] })),
-  { id: 'bullet', icon: '☷', name: 'Bulleted list', desc: 'A simple list of ideas' },
-  { id: 'ordered', icon: '1.', name: 'Numbered list', desc: 'One thing after another' },
-  { id: 'task', icon: '☑', name: 'Checklist', desc: 'Small things to get done' },
-  { id: 'quote', icon: '❞', name: 'Quote', desc: 'Give a thought its own space' },
-  { id: 'callout', icon: 'ⓘ', name: 'Callout', desc: 'Something worth remembering' },
-  { id: 'tip', icon: '◇', name: 'Tip', desc: 'A helpful little suggestion' },
-  { id: 'warning', icon: '△', name: 'Warning', desc: 'Something to keep in mind' },
-  { id: 'codeBlock', icon: '‹›', name: 'Code block', desc: 'A snippet of code' },
-  { id: 'divider', icon: '—', name: 'Divider', desc: 'A quiet break between ideas' },
-  { id: 'link', icon: '↗', name: 'Link or rich card', desc: 'A reference to come back to' },
-  { id: 'table', icon: '▦', name: 'Table', desc: 'Organise a few details' },
-  { id: 'image', icon: '▧', name: 'Image', desc: 'Insert a local image' },
+  { id: 'text', icon: 'textformat', fallback: 'T', name: 'Text', group: 'Text' },
+  ...[1, 2, 3, 4].map(level => ({ id: `h${level}`, label: `H${level}`, name: `Heading ${level}`, group: 'Text', shortcut: `⌘ ⌥ ${level}` })),
+  { id: 'bullet', icon: 'list.bullet', fallback: '•', name: 'Bulleted list', group: 'Text', shortcut: '⌘ ⇧ 8' },
+  { id: 'ordered', icon: 'list.number', fallback: '1.', name: 'Numbered list', group: 'Text', shortcut: '⌘ ⇧ 9' },
+  { id: 'task', icon: 'checklist', fallback: '☑', name: 'Checklist', group: 'Text', shortcut: '⌘ ⇧ 7' },
+  { id: 'quote', icon: 'quote.opening', fallback: '❞', name: 'Quote', group: 'Text', shortcut: '>' },
+  { id: 'collapsible', icon: 'chevron.right', fallback: '›', name: 'Collapsible section', group: 'Text', shortcut: '>>>' },
+  { id: 'divider', icon: 'minus', fallback: '—', name: 'Divider', group: 'Text', shortcut: '---' },
+  { id: 'codeBlock', icon: 'curlybraces', fallback: '{}', name: 'Code block', group: 'Insert', shortcut: '⌘ ⇧ \\' },
+  { id: 'table', icon: 'tablecells', fallback: '▦', name: 'Table', group: 'Insert', shortcut: '|--' },
+  { id: 'image', icon: 'photo', fallback: '▧', name: 'Image', group: 'Insert' },
+  { id: 'callout', icon: 'info.circle', fallback: 'ⓘ', name: 'Callout', group: 'Insert' },
+  { id: 'tip', icon: 'lightbulb', fallback: '◇', name: 'Tip', group: 'Insert' },
+  { id: 'warning', icon: 'exclamationmark.triangle', fallback: '△', name: 'Warning', group: 'Insert' },
+  { id: 'noteLink', icon: 'doc.text', fallback: '▤', name: 'Link to note', group: 'Insert', shortcut: '@' },
+  { id: 'link', icon: 'link', fallback: '↗', name: 'Link or rich card', group: 'Insert' },
+  { id: 'date', icon: 'calendar', fallback: '▦', name: 'Today’s date', group: 'Insert' },
+  { id: 'linearImport', icon: 'square.and.arrow.down', fallback: '↓', name: 'Import from Linear…', group: 'Linear' },
+  { id: 'linearRefresh', icon: 'arrow.clockwise', fallback: '↻', name: 'Refresh from Linear…', group: 'Linear', imported: true },
 ];
+const styleCommands = slashCommands.slice(0, 5), listCommands = slashCommands.filter(command => ['bullet', 'ordered', 'task'].includes(command.id));
+const linearImport = () => /^linearDocumentId:/m.test(propertiesText());
+// One suggestion menu serves `/` blocks, `@` note mentions, and the toolbar's style and list menus.
 function updateSlash() {
   if (mode !== 'live' || !editor) return hideSlash();
+  if (menuKind === 'style' || menuKind === 'list') { if (!$('slash').hidden) return; }
   const { $from, empty } = editor.state.selection;
-  if (!empty || $from.parent.type.name !== 'paragraph') return hideSlash();
-  const before = $from.parent.textBetween(0, $from.parentOffset);
-  const match = /^\/([\w ]*)$/.exec(before);
-  if (!match) return hideSlash();
-  slashRange = { from: $from.start(), to: $from.pos };
-  slashMatches = slashCommands.filter(command => command.name.toLowerCase().includes(match[1].toLowerCase()));
+  if (!empty || !$from.parent.isTextblock || $from.parent.type.spec.code) return hideSlash();
+  const before = $from.parent.textBetween(0, $from.parentOffset, null, '￼');
+  const slash = $from.parent.type.name === 'paragraph' && /^\/([\w ]*)$/.exec(before), mention = /(?:^|\s)@([^\s@￼]{0,40})$/.exec(before);
+  if (slash) {
+    menuKind = 'slash'; slashRange = { from: $from.start(), to: $from.pos }; menuQuery = slash[1];
+    slashMatches = slashCommands.filter(command => command.name.toLowerCase().includes(slash[1].toLowerCase()) && (!command.imported || linearImport()));
+  } else if (mention) {
+    menuKind = 'mention'; slashRange = { from: $from.pos - mention[1].length - 1, to: $from.pos }; menuQuery = mention[1];
+    const query = folded(mention[1]).value;
+    slashMatches = noteLinks.filter(note => folded(note.title).value.includes(query) || folded(note.path).value.includes(query)).slice(0, 8)
+      .map(note => ({ id: 'mention', icon: 'doc.text', fallback: '▤', name: note.title, hint: note.path.split('/').slice(0, -1).join(' / '), note }));
+  } else return hideSlash();
   slashIndex = Math.min(slashIndex, Math.max(0, slashMatches.length - 1)); drawSlash();
 }
+function showMenu(kind, commands, anchor) {
+  menuKind = kind; menuAnchor = anchor; slashMatches = commands; slashIndex = 0; slashRange = null; $('bubble').hidden = true; drawSlash();
+}
 function drawSlash() {
-  const menu = $('slash'); menu.replaceChildren();
-  if (!slashMatches.length) return hideSlash();
+  const menu = $('slash'); menu.replaceChildren(); menu.dataset.kind = menuKind;
+  if (!slashMatches.length && menuKind !== 'mention') return hideSlash();
+  if (menuKind === 'slash' || menuKind === 'mention') {
+    const search = document.createElement('div'); search.className = 'menu-search'; search.setAttribute('aria-hidden', 'true');
+    const query = document.createElement('span'); query.className = menuQuery ? 'menu-query' : 'menu-query empty';
+    query.textContent = menuQuery || (menuKind === 'slash' ? 'Search blocks…' : 'Search notes…');
+    search.append(icon('magnifyingglass', '⌕'), query); menu.append(search);
+  }
+  if (!slashMatches.length) { const none = document.createElement('div'); none.className = 'menu-empty'; none.textContent = 'No matching notes'; menu.append(none); }
+  let group = slashMatches[0]?.group;
   slashMatches.forEach((command, index) => {
+    if (menuKind === 'slash' && command.group && (index === 0 || command.group !== group)) {
+      const label = document.createElement('div'); label.className = 'menu-label'; label.setAttribute('aria-hidden', 'true'); label.textContent = command.group; menu.append(label);
+    }
     const button = document.createElement('button'); button.className = `slash-option${index === slashIndex ? ' selected' : ''}`; button.id = `slash-option-${index}`; button.role = 'option'; button.setAttribute('aria-selected', String(index === slashIndex));
-    const icon = document.createElement('span'); icon.className = 'slash-icon'; icon.textContent = command.icon;
-    const copy = document.createElement('span'); const name = document.createElement('span'); name.className = 'slash-name'; name.textContent = command.name;
-    button.title = command.desc;
-    const shortcut = document.createElement('span'); shortcut.className = 'slash-shortcut'; shortcut.textContent = command.shortcut || '';
-    copy.append(name); button.append(icon, copy, shortcut);
+    let glyph; if (command.label) { glyph = document.createElement('span'); glyph.className = 'icon text-icon'; glyph.setAttribute('aria-hidden', 'true'); glyph.textContent = command.label; } else glyph = icon(command.icon, command.fallback);
+    const name = document.createElement('span'); name.className = 'slash-name'; name.textContent = command.name;
+    const shortcut = document.createElement('span'); shortcut.className = command.hint ? 'slash-shortcut slash-hint' : 'slash-shortcut'; shortcut.textContent = command.hint ?? command.shortcut ?? '';
+    button.append(glyph, name, shortcut);
     if (index && command.group !== slashMatches[index - 1].group) button.classList.add('group-start');
+    group = command.group;
     button.onmousedown = e => { e.preventDefault(); chooseSlash(command); };
     button.onclick = e => { if (e.detail === 0) chooseSlash(command); };
     menu.append(button);
   });
-  const coords = editor.view.coordsAtPos(editor.state.selection.from); menu.hidden = false;
-  editor.view.dom.setAttribute('aria-controls', 'slash'); editor.view.dom.setAttribute('aria-expanded', 'true'); editor.view.dom.setAttribute('aria-activedescendant', `slash-option-${slashIndex}`);
+  menu.hidden = false;
+  editor.view.dom.setAttribute('aria-controls', 'slash'); editor.view.dom.setAttribute('aria-expanded', 'true');
+  if (slashMatches.length) editor.view.dom.setAttribute('aria-activedescendant', `slash-option-${slashIndex}`); else editor.view.dom.removeAttribute('aria-activedescendant');
+  const anchor = menuAnchor && (menuKind === 'style' || menuKind === 'list') ? menuAnchor.getBoundingClientRect() : null;
+  const coords = anchor ? { left: anchor.left, bottom: anchor.bottom } : editor.view.coordsAtPos(slashRange?.from ?? editor.state.selection.from);
   menu.style.left = `${Math.min(Math.max(10, coords.left), innerWidth - menu.offsetWidth - 12)}px`;
-  menu.style.top = `${Math.max(12, Math.min(coords.bottom + 8, innerHeight - menu.offsetHeight - 12))}px`;
+  menu.style.top = `${Math.max(12, Math.min(coords.bottom + 6, innerHeight - menu.offsetHeight - 12))}px`;
   menu.querySelector('.selected')?.scrollIntoView({ block: 'nearest' });
 }
-function hideSlash() { $('slash').hidden = true; slashRange = null; slashIndex = 0; editor?.view.dom.setAttribute('aria-expanded', 'false'); editor?.view.dom.removeAttribute('aria-activedescendant'); }
-function chooseSlash(command) { if (slashRange) editor.chain().focus().deleteRange(slashRange).run(); hideSlash(); execute(command.id); }
+function hideSlash() { $('slash').hidden = true; slashRange = null; slashIndex = 0; menuKind = 'slash'; menuAnchor = null; editor?.view.dom.setAttribute('aria-expanded', 'false'); editor?.view.dom.removeAttribute('aria-activedescendant'); }
+function chooseSlash(command) {
+  const range = slashRange; hideSlash();
+  if (command.id === 'mention') return insertNoteLink(command.note, range);
+  if (range) editor.chain().focus().deleteRange(range).run();
+  execute(command.id);
+}
+function insertNoteLink(note, range) {
+  editor.chain().focus().insertContentAt(range || editor.state.selection, [{ type: 'text', text: note.title, marks: [{ type: 'link', attrs: { href: note.reference } }] }, { type: 'text', text: ' ' }]).run();
+  editor.view.dispatch(editor.state.tr.removeStoredMark(editor.schema.marks.link));
+}
 
 function showLink(url = '') {
   if (mode !== 'live') return;
@@ -609,9 +872,13 @@ function execute(command) {
     case 'strike': return chain.toggleStrike().run();
     case 'underline': return chain.toggleUnderline().run();
     case 'code': return chain.toggleCode().run();
-    case 'paragraph': {
-      $('bubble').hidden = true; slashMatches = slashCommands.slice(0, 5); slashIndex = 0; slashRange = null; drawSlash(); return;
-    }
+    case 'paragraph': return showMenu('style', styleCommands, document.querySelector('#bubble [data-command=paragraph]'));
+    case 'lists': return showMenu('list', listCommands, document.querySelector('#bubble [data-command=lists]'));
+    case 'collapsible': return insertDetails();
+    case 'noteLink': return chain.insertContent(editor.state.selection.$from.parentOffset && !/\s$/.test(editor.state.selection.$from.parent.textBetween(0, editor.state.selection.$from.parentOffset)) ? ' @' : '@').run();
+    case 'date': return chain.insertContent(new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) + ' ').run();
+    case 'linearImport': send('linear', { id: documentID, action: 'import' }); return;
+    case 'linearRefresh': send('linear', { id: documentID, action: 'refresh' }); return;
     case 'text': return chain.setParagraph().run();
     case 'bullet': return chain.toggleBulletList().run();
     case 'ordered': return chain.toggleOrderedList().run();
@@ -627,11 +894,6 @@ function execute(command) {
     case 'redo': return editor.commands.redo();
   }
 }
-slashCommands[0].id = 'text';
-for (const command of slashCommands) {
-  command.group = ['text', 'h1', 'h2', 'h3', 'h4'].includes(command.id) ? 0 : ['bullet', 'ordered', 'task'].includes(command.id) ? 1 : 2;
-  command.shortcut = /^h[1-4]$/.test(command.id) ? `⌘ ⌥ ${command.id[1]}` : ({ bullet: '⌘ ⇧ 8', ordered: '⌘ ⇧ 9', task: '⌘ ⇧ 7', codeBlock: '⌘ ⇧ \\' })[command.id];
-}
 document.querySelectorAll('[data-command]').forEach(button => {
   button.addEventListener('mousedown', e => { e.preventDefault(); execute(button.dataset.command); updateBubble(); });
   button.addEventListener('click', e => { if (e.detail === 0) { execute(button.dataset.command); updateBubble(); } });
@@ -645,10 +907,12 @@ function updateBubble() {
   bubble.style.top = `${Math.max(12, start.top - bubble.offsetHeight - 8)}px`;
   bubble.style.left = `${Math.max(12, Math.min((start.left + end.left) / 2 - bubble.offsetWidth / 2, innerWidth - bubble.offsetWidth - 12))}px`;
   for (const button of bubble.querySelectorAll('[data-command]')) {
-    const mark = { strike: 'strike', codeBlock: 'codeBlock', bullet: 'bulletList', task: 'taskList', quote: 'blockquote' }[button.dataset.command] || button.dataset.command;
-    const active = editor.isActive(mark);
+    const command = button.dataset.command;
+    if (command === 'paragraph') continue;
+    const active = command === 'lists' ? ['bulletList', 'orderedList', 'taskList'].some(name => editor.isActive(name))
+      : editor.isActive({ quote: 'blockquote', collapsible: 'details' }[command] || command);
     button.classList.toggle('active', active);
-    button.setAttribute('aria-pressed', String(active));
+    if (command !== 'lists') button.setAttribute('aria-pressed', String(active));
   }
 }
 document.addEventListener('click', e => {
@@ -660,8 +924,10 @@ document.addEventListener('click', e => {
     }
   }
   if (!e.target.closest('#slash') && !e.target.closest('#bubble')) hideSlash();
+  if (!e.target.closest('#heading-menu') && !e.target.closest('#heading-handle')) { closeHeadingMenu(); hideHeadingHandle(); }
+  if (!e.target.closest('#outline')) closeOutline();
 });
-window.addEventListener('resize', () => { $('bubble').hidden = true; hideSlash(); });
+window.addEventListener('resize', () => { $('bubble').hidden = true; hideSlash(); closeHeadingMenu(); hideHeadingHandle(); });
 const headingElements = () => mode === 'source' ? [] : Array.from(document.querySelectorAll('.tiptap h1,.tiptap h2,.tiptap h3,.tiptap h4,.tiptap h5,.tiptap h6'));
 function headingIndex(headings = headingElements()) {
   if (headings.length && window.scrollY > 0 && window.scrollY + innerHeight >= document.documentElement.scrollHeight - 2) return headings.length - 1;
@@ -671,7 +937,96 @@ function headingIndex(headings = headingElements()) {
 }
 function reportOutline() {
   const headings = headingElements(); activeHeading = headingIndex(headings);
-  send('outline', { id: documentID, headings: headings.map((heading, index) => ({ index, level: Number(heading.tagName[1]), text: heading.textContent })), active: activeHeading });
+  const rows = headings.map((heading, index) => ({ index, level: Number(heading.tagName[1]), text: heading.textContent }));
+  send('outline', { id: documentID, headings: rows, active: activeHeading });
+  drawOutline(rows);
+}
+// Linear's outline: a dash per heading on the panel edge that opens into a list on hover.
+function drawOutline(rows) {
+  const top = Math.min(...rows.map(row => row.level)), shown = rows.length > 24 ? rows.filter(row => row.level === top) : rows;
+  const key = JSON.stringify(shown);
+  $('outline').hidden = shown.length < 2;
+  if (key === outlineKey) return markOutline();
+  outlineKey = key;
+  $('outline-rail').replaceChildren(...shown.map(row => {
+    const mark = document.createElement('span'); mark.className = 'outline-mark'; mark.dataset.index = row.index; mark.dataset.depth = String(Math.min(4, row.level - top + 1)); return mark;
+  }));
+  $('outline-list').replaceChildren(...shown.map(row => {
+    const button = document.createElement('button'); button.className = 'outline-item'; button.dataset.index = row.index; button.dataset.depth = String(Math.min(4, row.level - top + 1));
+    button.textContent = row.text || 'Untitled heading'; button.onclick = () => { jumpToHeading(row.index); closeOutline(); }; return button;
+  }));
+  markOutline();
+}
+function markOutline() {
+  const marks = [...$('outline-list').children], current = marks.filter(mark => Number(mark.dataset.index) <= activeHeading).at(-1);
+  for (const element of document.querySelectorAll('#outline [data-index]')) element.classList.toggle('active', Boolean(current) && element.dataset.index === current.dataset.index);
+}
+function closeOutline() { $('outline').classList.remove('open'); $('outline-rail').setAttribute('aria-expanded', 'false'); }
+$('outline-rail').onclick = () => { const open = !$('outline').classList.contains('open'); $('outline').classList.toggle('open', open); $('outline-rail').setAttribute('aria-expanded', String(open)); if (open) $('outline-list').querySelector('.active, button')?.focus(); };
+$('outline').addEventListener('keydown', event => {
+  if (event.key === 'Escape') { event.preventDefault(); closeOutline(); $('outline-rail').focus(); }
+  if (['ArrowDown', 'ArrowUp'].includes(event.key) && event.target.closest('#outline-list')) {
+    event.preventDefault(); const items = [...$('outline-list').children], index = items.indexOf(event.target);
+    items[(index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
+  }
+});
+$('outline').addEventListener('focusout', event => { if (!$('outline').contains(event.relatedTarget)) closeOutline(); });
+
+// Hovering a heading shows a handle in the gutter with Copy link and Make collapsible.
+let handleHeading = null;
+const headingSlug = text => text.toLocaleLowerCase().normalize('NFKD').replace(/\p{M}/gu, '').replace(/[^\p{L}\p{N}\s-]/gu, '').trim().replace(/\s+/g, '-');
+function showHeadingHandle(heading) {
+  if (mode === 'source' || !heading) return;
+  handleHeading = heading;
+  const rect = heading.getBoundingClientRect(), line = parseFloat(getComputedStyle(heading).lineHeight) || rect.height, handle = $('heading-handle');
+  handle.hidden = false; handle.style.left = `${rect.left - 30}px`; handle.style.top = `${rect.top + Math.max(0, (line - 24) / 2)}px`;
+}
+function hideHeadingHandle() { if (!$('heading-menu').hidden) return; $('heading-handle').hidden = true; handleHeading = null; }
+function closeHeadingMenu() { $('heading-menu').hidden = true; $('heading-handle').setAttribute('aria-expanded', 'false'); }
+document.addEventListener('mousemove', event => {
+  if (!$('heading-menu').hidden || event.target.closest('#heading-handle')) return;
+  const heading = event.target.closest('.tiptap h1, .tiptap h2, .tiptap h3, .tiptap h4, .tiptap h5, .tiptap h6');
+  if (heading) showHeadingHandle(heading); else hideHeadingHandle();
+});
+$('heading-handle').onmousedown = event => event.preventDefault();
+$('heading-handle').onclick = () => {
+  const menu = $('heading-menu'), rect = $('heading-handle').getBoundingClientRect();
+  menu.querySelector('[data-heading-action=collapse]').hidden = mode !== 'live';
+  menu.hidden = false; $('heading-handle').setAttribute('aria-expanded', 'true');
+  menu.style.left = `${Math.max(12, Math.min(rect.left, innerWidth - menu.offsetWidth - 12))}px`; menu.style.top = `${Math.min(rect.bottom + 4, innerHeight - menu.offsetHeight - 12)}px`;
+  menu.querySelector('button:not([hidden])').focus();
+};
+$('heading-menu').addEventListener('keydown', event => {
+  if (event.key === 'Escape') { event.preventDefault(); closeHeadingMenu(); $('heading-handle').focus(); }
+  if (['ArrowDown', 'ArrowUp'].includes(event.key)) {
+    event.preventDefault(); const items = [...$('heading-menu').querySelectorAll('button:not([hidden])')], index = items.indexOf(document.activeElement);
+    items[(index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
+  }
+});
+document.querySelectorAll('[data-heading-action]').forEach(button => {
+  button.onmousedown = event => event.preventDefault();
+  button.onclick = () => {
+    const heading = handleHeading; closeHeadingMenu(); hideHeadingHandle(); if (!heading) return;
+    if (button.dataset.headingAction === 'link') {
+      const file = encodeURI(documentID.split('/').at(-1) || '').replace(/\(/g, '%28').replace(/\)/g, '%29');
+      copyText(`[${escapeLabel(heading.textContent)}](${file}#${encodeURIComponent(headingSlug(heading.textContent))})`, 'Link copied');
+    } else makeCollapsible(heading);
+  };
+});
+function makeCollapsible(heading) {
+  if (mode !== 'live') return;
+  const $pos = editor.state.doc.resolve(editor.view.posAtDOM(heading, 0)), node = $pos.parent;
+  if (node.type.name !== 'heading') return;
+  const container = $pos.node($pos.depth - 1), index = $pos.index($pos.depth - 1), from = $pos.before(), blocks = [];
+  let to = $pos.after();
+  for (let next = index + 1; next < container.childCount; next++) {
+    const block = container.child(next);
+    if (block.type.name === 'heading' && block.attrs.level <= node.attrs.level) break;
+    blocks.push(block); to += block.nodeSize;
+  }
+  if (!container.canReplaceWith(index, index + blocks.length + 1, editor.schema.nodes.details)) return;
+  const tr = editor.state.tr.replaceWith(from, to, detailsNode(editor.schema, node.textContent, blocks));
+  editor.view.dispatch(tr.setSelection(TextSelection.create(tr.doc, from + 2 + node.textContent.length)).scrollIntoView()); editor.commands.focus();
 }
 function jumpToHeading(index) {
   const heading = headingElements()[index]; if (!heading) return;
@@ -679,8 +1034,8 @@ function jumpToHeading(index) {
 }
 window.addEventListener('scroll', () => {
   reportView();
-  $('bubble').hidden = true; hideSlash();
-  const next = headingIndex(); if (next !== activeHeading) { activeHeading = next; send('headingActive', { id: documentID, active: next }); }
+  $('bubble').hidden = true; hideSlash(); closeHeadingMenu(); hideHeadingHandle();
+  const next = headingIndex(); if (next !== activeHeading) { activeHeading = next; send('headingActive', { id: documentID, active: next }); markOutline(); }
 }, { passive: true });
 window.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); if (e.altKey) showFindAndReplace(); else showFind(); }
@@ -706,7 +1061,7 @@ async function preparePrint() {
 }
 function finishPrint() { if (printState) { positions = printState.positions; setMode(printState.mode); restorePosition(positions[mode]); printState = null; } printing = false; }
 window.notes = { load: loadDocument, setMode, command: execute, getMarkdown: () => currentMarkdown, getJSON: () => editor.getJSON(), focus: () => mode === 'source' ? $('source').focus() : editor.commands.focus(), properties: showProperties, attachment: receiveAttachment, jumpToHeading,
-  find: term => showFind(term, false), showFind, showFindAndReplace, viewState, textSize, setNotes: notes => { noteLinks = notes; }, preparePrint, finishPrint };
+  find: term => showFind(term, false), showFind, showFindAndReplace, viewState, textSize, setNotes: notes => { noteLinks = notes; }, setIcons, preparePrint, finishPrint };
 send('ready');
 // A browser harness loads only explicit fixtures; production content arrives from the native host.
 loadDocument({ id: '', markdown: '', mode: 'live' });

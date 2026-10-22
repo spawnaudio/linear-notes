@@ -17,7 +17,10 @@ import UniformTypeIdentifiers
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame, let data = message.body as? [String: Any], let store, let tab else { return }
         switch data["type"] as? String {
-        case "ready": ready = true; update()
+        case "ready":
+            ready = true
+            webView?.callAsyncJavaScript("window.notes.setIcons(icons)", arguments: ["icons": EditorSymbols.masks], in: nil, in: .page, completionHandler: nil)
+            update()
         case "focus": store.activate(tab)
         case "change": if !loadingDocument, loadedVersion == tab.documentVersion, let text = data["markdown"] as? String, let id = data["id"] as? String { store.changed(text, id: id, tab: tab) }
         case "save": store.save(tab: tab)
@@ -58,6 +61,13 @@ import UniformTypeIdentifiers
                 }
             }
         case "stats": if data["id"] as? String == tab.selected { tab.words = data["words"] as? Int ?? 0 }
+        case "rename": if let id = data["id"] as? String, id == tab.selected, let title = data["title"] as? String { store.retitle(id, to: title) }
+        case "copy":
+            if let text = data["text"] as? String, text.utf8.count <= 4 * 1024 * 1024 { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
+        case "linear":
+            store.activate(tab)
+            if data["action"] as? String == "import" { store.linearImportVisible = true }
+            else if data["action"] as? String == "refresh", NoteLibrary.linearSource(in: tab.markdown) != nil { store.linearRefreshVisible = true }
         case "openLink":
             if let raw = data["url"] as? String, let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? "") { NSWorkspace.shared.open(url) }
         default: break
@@ -66,7 +76,7 @@ import UniformTypeIdentifiers
     func update() {
         guard ready, let store, let tab, let webView else { return }
         if loadedVersion != tab.documentVersion {
-            var payload: [String: Any] = ["id": tab.selected ?? "", "markdown": tab.markdown, "mode": tab.mode.rawValue, "assetBase": "notes-asset:", "textSize": store.textSize, "focus": tab.focusNewNote, "notes": noteLinks()]
+            var payload: [String: Any] = ["id": tab.selected ?? "", "title": tab.selected.map { NoteItem(path: $0, isFolder: false).title } ?? "", "markdown": tab.markdown, "mode": tab.mode.rawValue, "assetBase": "notes-asset:", "textSize": store.textSize, "focus": tab.focusNewNote, "notes": noteLinks()]
             if tab.selected != nil, let state = tab.session, let bytes = try? JSONEncoder().encode(state), let object = try? JSONSerialization.jsonObject(with: bytes) { payload["state"] = object }
             if let term = tab.pendingFind { payload["find"] = term }
             tab.focusNewNote = false; tab.pendingFind = nil

@@ -346,6 +346,14 @@ These match Linear's editor:
 - Groups: *Text* (headings, lists, checklist, quote, collapsible, divider), *Insert* (code block, table, image, callout, note link, date), and *Linear* (import and refresh actions).
 - Up and down arrows move through the rows, Return inserts, and Escape closes.
 
+### Implementation notes from step 3
+
+- **Focus:** the writing surface and title show the accent caret instead of a focus ring, as Linear does. Buttons, menus, and fields keep visible focus rings.
+- **Quote bar:** uses its own `quote-bar` token (`#34353B` dark, `#D6D6DA` light), because `border` is nearly invisible against the dark canvas.
+- **Menus:** the slash menu, `@` mentions, the toolbar's text style and list menus, the heading menu, and the outline share one floating style on a `floating` surface (`#17181B` dark, `#FFFFFF` light).
+- **Collapsible sections** remember open or closed in the file (`<details open>`) when toggled in Live mode, as checkboxes do. Reading mode only changes the view.
+- **Not yet built:** `:name` emoji suggestions, image resize handles, and double-Return to leave a code block (Return three times still works).
+
 ---
 
 ## 10. Details rail

@@ -150,22 +150,10 @@ struct ContentView: View {
                                 }
                             }
                         }
-                        if !store.headings.isEmpty && store.mode != .source {
-                            railSection("Outline") {
-                                ForEach(store.headings) { heading in
-                                    Button { store.bridge?.jumpToHeading(heading.id) } label: {
-                                        Text(heading.text.isEmpty ? "Untitled heading" : heading.text).lineLimit(1)
-                                            .foregroundStyle(store.activeHeading == heading.id ? Palette.primary : Palette.secondary)
-                                            .padding(.leading, CGFloat(max(0, heading.level - 1) * 12) + 8).frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
-                                            .background(store.activeHeading == heading.id ? Palette.selected : .clear, in: RoundedRectangle(cornerRadius: 6))
-                                    }.buttonStyle(.plain).accessibilityAddTraits(store.activeHeading == heading.id ? .isSelected : [])
-                                }
-                            }
-                        }
                         railSection("Note") {
-                            railRow("textformat.size", "\(store.words) words")
+                            railRow("textformat.size", store.words == 1 ? "1 word" : "\(store.words) words")
+                            railRow("book", "\(max(1, (store.words + 199) / 200)) min read")
                             railRow("clock", store.editedLabel(selected).isEmpty ? store.status : store.editedLabel(selected))
-                            railRow(store.mode.icon, store.mode.title)
                         }
                         if let source = store.propertyRows.first(where: { $0.name == "linearDocumentUrl" })?.value,
                            let url = URL(string: source.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))), url.scheme == "https", url.host == "linear.app" {
@@ -182,6 +170,10 @@ struct ContentView: View {
                         }
                         railSection("File") {
                             Text(selected).foregroundStyle(Palette.muted).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                            if let file = store.fileDetails(selected) {
+                                railRow("internaldrive", file.size)
+                                if let created = file.created { railRow("calendar", "Created " + created) }
+                            }
                             if !NoteLibrary.remoteImageURLs(in: store.markdown).isEmpty {
                                 Button { store.saveImagesLocally() } label: { railRow("photo", store.savingImages ? "Saving images…" : "Save images locally") }
                                     .buttonStyle(.plain).disabled(store.savingImages)

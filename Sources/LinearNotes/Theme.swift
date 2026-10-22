@@ -123,3 +123,34 @@ struct IdentityTile: View {
             .accessibilityHidden(true)
     }
 }
+
+/// SF Symbols for the editor web view, rendered once into 16pt template masks (spec §12).
+/// The editor applies them as CSS masks, so they follow the theme colour like native icons.
+@MainActor enum EditorSymbols {
+    static let names = [
+        "arrow.clockwise", "arrow.up.right", "bold", "calendar", "checklist", "chevron.down", "chevron.left.forwardslash.chevron.right",
+        "chevron.right", "chevron.up", "chevron.up.chevron.down", "curlybraces", "doc.on.doc", "doc.text", "doc.text.fill", "ellipsis",
+        "exclamationmark.triangle", "globe", "info.circle", "italic", "lightbulb", "link", "list.bullet", "list.number", "magnifyingglass",
+        "minus", "photo", "plus", "quote.opening", "square.and.arrow.down", "strikethrough", "tablecells", "textformat", "textformat.size",
+        "underline", "xmark"
+    ]
+    static let masks: [String: String] = {
+        let canvas = NSSize(width: 16, height: 16), scale: CGFloat = 3
+        var result: [String: String] = [:]
+        for name in names {
+            guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 13, weight: .regular)),
+                  let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(canvas.width * scale), pixelsHigh: Int(canvas.height * scale),
+                                                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+            else { continue }
+            bitmap.size = canvas
+            let fit = min(1, canvas.width / symbol.size.width, canvas.height / symbol.size.height)
+            let size = NSSize(width: symbol.size.width * fit, height: symbol.size.height * fit)
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+            symbol.draw(in: NSRect(x: (canvas.width - size.width) / 2, y: (canvas.height - size.height) / 2, width: size.width, height: size.height))
+            NSGraphicsContext.restoreGraphicsState()
+            if let png = bitmap.representation(using: .png, properties: [:]) { result[name] = "data:image/png;base64," + png.base64EncodedString() }
+        }
+        return result
+    }()
+}

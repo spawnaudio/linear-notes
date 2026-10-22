@@ -10,12 +10,12 @@
 <body>
   <div id="find" class="popover" role="search" aria-label="Find in document" hidden>
     <div class="find-row">
-      <button id="find-toggle" aria-label="Show replacement" aria-expanded="false" aria-controls="find-replacement" title="Find and replace · ⌘⌥F">›</button>
+      <button id="find-toggle" aria-label="Show replacement" aria-expanded="false" aria-controls="find-replacement" title="Find and replace · ⌘⌥F"><span class="icon" data-icon="chevron.right" data-fallback="›"></span></button>
       <textarea id="find-text" rows="1" aria-label="Find text" placeholder="Find in this note…"></textarea>
       <span id="find-count" role="status" aria-live="polite"></span>
-      <button id="find-previous" aria-label="Previous match" title="Previous match · ⇧Enter">↑</button>
-      <button id="find-next" aria-label="Next match" title="Next match · Enter">↓</button>
-      <button id="find-close" aria-label="Close find" title="Close · Escape">×</button>
+      <button id="find-previous" aria-label="Previous match" title="Previous match · ⇧Enter"><span class="icon" data-icon="chevron.up" data-fallback="↑"></span></button>
+      <button id="find-next" aria-label="Next match" title="Next match · Enter"><span class="icon" data-icon="chevron.down" data-fallback="↓"></span></button>
+      <button id="find-close" aria-label="Close find" title="Close · Escape"><span class="icon" data-icon="xmark" data-fallback="×"></span></button>
     </div>
     <div id="find-replacement" class="find-row" hidden>
       <textarea id="replace-text" rows="1" aria-label="Replacement text" placeholder="Replace with…"></textarea>
@@ -23,8 +23,16 @@
       <button id="replace-all">Replace all</button>
     </div>
   </div>
+  <nav id="outline" aria-label="Outline" hidden>
+    <button id="outline-rail" aria-label="Outline" aria-expanded="false" aria-controls="outline-list"></button>
+    <div id="outline-list" class="popover menu"></div>
+  </nav>
   <main id="page">
-    <div id="properties" aria-label="Document properties"></div>
+    <header id="title-block" hidden>
+      <div id="doc-icon" aria-hidden="true"><span class="icon" data-icon="doc.text.fill" data-fallback="▤"></span></div>
+      <h1 id="title" role="textbox" aria-label="Note title" data-placeholder="Untitled" spellcheck="true"></h1>
+      <div id="properties" aria-label="Document properties"></div>
+    </header>
     <div id="editor"></div>
     <textarea id="source" spellcheck="false" aria-label="Markdown source" hidden></textarea>
     <div id="endnote"></div>
@@ -59,20 +67,25 @@
   </form></dialog>
   <div id="slash" class="popover" role="listbox" aria-label="Insert a block" hidden></div>
   <div id="bubble" class="popover" role="toolbar" aria-label="Selection formatting" hidden>
-    <button data-command="paragraph" aria-label="Text style" title="Text style">H⌄</button>
+    <button data-command="paragraph" class="menu-button" aria-label="Text style" aria-haspopup="listbox" title="Text style"><span class="icon" data-icon="textformat.size" data-fallback="Aa"></span><span class="icon caret" data-icon="chevron.down" data-fallback="⌄"></span></button>
     <span class="separator"></span>
-    <button data-command="bold" aria-label="Bold" title="Bold · ⌘B"><b>B</b></button>
-    <button data-command="italic" aria-label="Italic" title="Italic · ⌘I"><i>I</i></button>
-    <button data-command="strike" aria-label="Strikethrough" title="Strikethrough · ⌘⇧S"><s>S</s></button>
-    <button data-command="underline" aria-label="Underline" title="Underline · ⌘U"><u>U</u></button>
-    <button data-command="link" aria-label="Link" title="Link · ⌘K">↗</button>
-    <button data-command="quote" aria-label="Blockquote" title="Blockquote">❞</button>
-    <span class="separator"></span>
-    <button data-command="code" aria-label="Inline code" title="Inline code · ⌘E">‹›</button>
-    <button data-command="codeBlock" aria-label="Code block" title="Code block · ⌘⇧\">{ }</button>
-    <button data-command="bullet" aria-label="Bulleted list" title="Bulleted list · ⌘⇧8">☷</button>
-    <button data-command="task" aria-label="Checklist" title="Checklist · ⌘⇧7">☑</button>
+    <button data-command="bold" aria-label="Bold" title="Bold · ⌘B"><span class="icon" data-icon="bold" data-fallback="B"></span></button>
+    <button data-command="italic" aria-label="Italic" title="Italic · ⌘I"><span class="icon" data-icon="italic" data-fallback="I"></span></button>
+    <button data-command="strike" aria-label="Strikethrough" title="Strikethrough · ⌘⇧S"><span class="icon" data-icon="strikethrough" data-fallback="S"></span></button>
+    <button data-command="underline" aria-label="Underline" title="Underline · ⌘U"><span class="icon" data-icon="underline" data-fallback="U"></span></button>
+    <button data-command="link" aria-label="Link" title="Link · ⌘K"><span class="icon" data-icon="link" data-fallback="↗"></span></button>
+    <button data-command="quote" aria-label="Blockquote" title="Blockquote"><span class="icon" data-icon="quote.opening" data-fallback="❞"></span></button>
+    <button data-command="collapsible" aria-label="Collapsible section" title="Collapsible section"><span class="icon" data-icon="chevron.up.chevron.down" data-fallback="▸"></span></button>
+    <button data-command="code" aria-label="Inline code" title="Inline code · ⌘E"><span class="icon" data-icon="chevron.left.forwardslash.chevron.right" data-fallback="‹›"></span></button>
+    <button data-command="codeBlock" aria-label="Code block" title="Code block · ⌘⇧\"><span class="icon" data-icon="curlybraces" data-fallback="{ }"></span></button>
+    <button data-command="lists" class="menu-button" aria-label="Lists" aria-haspopup="listbox" title="Lists"><span class="icon" data-icon="list.bullet" data-fallback="☷"></span><span class="icon caret" data-icon="chevron.down" data-fallback="⌄"></span></button>
   </div>
+  <button id="heading-handle" aria-label="Heading actions" aria-haspopup="menu" aria-expanded="false" hidden><span class="icon" data-icon="ellipsis" data-fallback="⋮"></span></button>
+  <div id="heading-menu" class="popover menu" role="menu" aria-label="Heading actions" hidden>
+    <button role="menuitem" data-heading-action="link"><span class="icon" data-icon="link" data-fallback="↗"></span><span>Copy link</span></button>
+    <button role="menuitem" data-heading-action="collapse"><span class="icon" data-icon="chevron.up.chevron.down" data-fallback="▸"></span><span>Make collapsible</span></button>
+  </div>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
   <dialog id="link-dialog">
     <form method="dialog" id="link-form">
       <h2>Add a link</h2><p>Insert an inline link or a resource card.</p>
