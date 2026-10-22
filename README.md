@@ -4,9 +4,11 @@ Linear Project: [Linear Notes App](https://linear.app/spawn-audio/project/linear
 
 A minimal macOS notes app inspired by [Linear Documents](https://linear.app/docs/documents) and [Markdown Preview](https://markdownpreview.app). Your notes are ordinary local Markdown files. No account is required for local notes. Linear import is optional.
 
+> **Overhaul v2 experiment.** This branch builds **Linear Notes Overhaul.app**, a redesign that follows Linear's document design as closely as possible. It has its own bundle identifier, so it runs beside the shipped app with separate window settings. Notes folders are shared files, so compare the two apps on a copy of a notes folder. See [`docs/Overhaul v2 - Linear Fidelity Spec.md`](docs/Overhaul%20v2%20-%20Linear%20Fidelity%20Spec.md).
+
 ## Try it
 
-Open **dist/Linear Notes v1.3.app**, then choose a folder containing `.md` or `.markdown` files. The included `Examples/Notebook` is a small starter notebook. The app remembers folders you choose through its folder picker.
+Open **dist/Linear Notes Overhaul.app**, then choose a folder containing `.md` or `.markdown` files. The included `Examples/Notebook` is a small starter notebook. The app remembers folders you choose through its folder picker.
 
 Requires macOS 15 or later. This is a locally signed MVP, not a notarized distribution build. The app is called Linear Notes as a working title; it is not affiliated with Linear.
 
@@ -107,7 +109,7 @@ npm run build
 npm test
 ```
 
-Browser tests use the local Google Chrome installation on macOS. `npm run build` produces the offline resources under `Sources/LinearNotes/Resources/Editor`. The build script packages `dist/Linear Notes v1.3.app` and verifies its local signature.
+Browser tests use the local Google Chrome installation on macOS. `npm run build` produces the offline resources under `Sources/LinearNotes/Resources/Editor`. The build script packages `dist/Linear Notes Overhaul.app` and verifies its local signature.
 
 ## MVP boundaries
 

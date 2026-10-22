@@ -312,6 +312,7 @@ struct NoteHeading: Identifiable { let id: Int; let level: Int; let text: String
             // Seed order from what is actually visible, including previously unindexed files.
             library.sidebar.order[parent] = children(parent).map(\.path)
             let next = try library.move(path, to: parent, before: before, newName: newName)
+            remapNavigation(path, to: next)
             sessions = Dictionary(uniqueKeysWithValues: sessions.map { key, value in
                 (key == path || key.hasPrefix(path + "/") ? next + key.dropFirst(path.count) : key, value)
             })

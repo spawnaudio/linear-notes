@@ -9,7 +9,7 @@ import AppKit
         _store = StateObject(wrappedValue: NotebookStore())
     }
     var body: some Scene {
-        Window("Linear Notes", id: "main") {
+        Window("Linear Notes Overhaul", id: "main") {
             ContentView(store: store)
                 .onAppear { delegate.store = store; delegate.attachWindow() }
         }

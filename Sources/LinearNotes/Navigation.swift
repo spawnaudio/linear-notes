@@ -25,16 +25,37 @@ extension NotebookStore {
     }
     func goBack() { navigate(by: -1) }
     func goForward() { navigate(by: 1) }
+    /// Steps through history within the visited tab, as Linear's back and forward do, skipping notes that no longer exist.
     private func navigate(by offset: Int) {
-        let target = visitIndex + offset
+        var target = visitIndex + offset
+        while visits.indices.contains(target), let path = visits[target].path, !items.contains(where: { $0.path == path && !$0.isFolder }) { target += offset }
         guard visits.indices.contains(target) else { return }
-        visitIndex = target
-        let visit = visits[target]
-        if let tab = allTabs.first(where: { $0.id == visit.tab }) {
-            if tab.selected == visit.path { selectTab(tab, in: panes.first { $0.tabs.contains { $0.id == tab.id } } ?? activePane); return }
-            activate(tab)
+        let visit = visits[target], tab = allTabs.first(where: { $0.id == visit.tab }) ?? activeTab
+        guard let pane = panes.first(where: { $0.tabs.contains { $0.id == tab.id } }) else { return }
+        afterSave { [self] in
+            visitIndex = target; activePaneID = pane.id; pane.selectedTabID = tab.id
+            guard tab.selected != visit.path else { saveWorkspace(); return }
+            guard let path = visit.path, let text = try? library?.read(path) else { showRecent(); return }
+            tab.selected = path; tab.markdown = text; tab.baseline = text; tab.dirty = false
+            tab.headings = []; tab.activeHeading = -1; tab.session = sessions[path]
+            tab.mode = EditorMode(rawValue: tab.session?.mode ?? "live") ?? .live
+            tab.status = "Saved locally"; tab.conflict = false; tab.saveFailed = false; tab.error = nil; tab.documentVersion += 1
+            mutateSidebar { $0.lastSelected = path }; saveWorkspace()
         }
-        if let path = visit.path, items.contains(where: { $0.path == path }) { select(path) } else { showRecent() }
+    }
+
+    /// Keeps history and Recent pointing at a note or folder after it moves or is renamed.
+    func remapNavigation(_ old: String, to new: String) {
+        func map(_ path: String) -> String { path == old ? new : path.hasPrefix(old + "/") ? new + path.dropFirst(old.count) : path }
+        var merged: [NavigationVisit] = [], index = -1
+        for (offset, visit) in visits.enumerated() {
+            let next = NavigationVisit(tab: visit.tab, path: visit.path.map(map))
+            if merged.last != next { merged.append(next) }
+            if offset == visitIndex { index = merged.count - 1 }
+        }
+        visits = merged; visitIndex = index
+        recent = recent.map(map)
+        if let library { UserDefaults.standard.set(recent, forKey: "recentNotes." + library.root.path) }
     }
 
     /// Shows the Recent list in the active tab, as Linear does when a sidebar view is chosen.
