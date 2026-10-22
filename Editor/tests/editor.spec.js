@@ -406,7 +406,11 @@ test('outline reflects rendered headings, scroll position and modes; quick switc
   await page.keyboard.press('Meta+p');
   expect(await page.evaluate(() => window.messages.some(m => m.type === 'quickOpen'))).toBe(true);
   await page.evaluate(() => window.notes.setMode('live'));
+  await page.evaluate(() => { window.messages.length = 0; });
   await page.locator('.tiptap h1').click(); await page.keyboard.press('Meta+k');
+  expect(await page.evaluate(() => window.messages.some(m => m.type === 'quickOpen'))).toBe(true);
+  await expect(page.locator('#link-dialog')).toBeHidden();
+  await page.locator('.tiptap h1').dblclick(); await page.keyboard.press('Meta+k');
   await expect(page.locator('#link-dialog')).toBeVisible();
 });
 
@@ -554,7 +558,7 @@ test('Source replacement and native undo preserve exact frontmatter, whitespace 
 test('note picker inserts portable relative links and keyboard reading opens the native note', async ({ page }) => {
   await load(page, '# Index\n\nA reference.');
   await page.evaluate(() => window.notes.setNotes([{ title: 'Café plan', path: 'Projects/Café plan.md', reference: 'Projects/Caf%C3%A9%20plan.md' }]));
-  await page.locator('.tiptap p').click();
+  await page.locator('.tiptap p').dblclick();
   await page.keyboard.press('Meta+k');
   await page.getByRole('textbox', { name: 'Link to a note', exact: true }).fill('cafe');
   await page.locator('#note-links button').click();

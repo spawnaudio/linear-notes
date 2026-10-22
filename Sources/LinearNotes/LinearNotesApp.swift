@@ -3,7 +3,11 @@ import AppKit
 
 @main struct LinearNotesApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
-    @StateObject private var store = NotebookStore()
+    @StateObject private var store: NotebookStore
+    init() {
+        Typeface.register()
+        _store = StateObject(wrappedValue: NotebookStore())
+    }
     var body: some Scene {
         Window("Linear Notes", id: "main") {
             ContentView(store: store)
@@ -35,7 +39,7 @@ import AppKit
                 Button("Underline") { store.bridge?.command("underline") }.keyboardShortcut("u")
                 Button("Strikethrough") { store.bridge?.command("strike") }.keyboardShortcut("s", modifiers: [.command, .shift])
                 Button("Inline Code") { store.bridge?.command("code") }.keyboardShortcut("e")
-                Button("Link…") { store.bridge?.command("link") }.keyboardShortcut("k")
+                Button("Link…") { store.bridge?.command("link") }
                 Divider()
                 ForEach(1...4, id: \.self) { level in Button("Heading \(level)") { store.bridge?.command("h\(level)") }.keyboardShortcut(KeyEquivalent(Character(String(level))), modifiers: [.command, .option]) }
                 Divider()
@@ -48,7 +52,14 @@ import AppKit
                 Button("Code Block") { store.bridge?.command("codeBlock") }.keyboardShortcut("\\", modifiers: [.command, .shift])
             }
             CommandGroup(after: .sidebar) {
+                Button("Command Menu…") { store.quickOpenVisible = true }.keyboardShortcut("k")
                 Button("Find a Note…") { store.quickOpenVisible = true }.keyboardShortcut("p")
+                Button("Show Recent Notes") { store.showRecent() }.disabled(store.library == nil)
+                Divider()
+                Button("Back") { store.goBack() }.keyboardShortcut("[").disabled(!store.canGoBack)
+                Button("Forward") { store.goForward() }.keyboardShortcut("]").disabled(!store.canGoForward)
+                Button(store.selected.map { store.isBookmarked($0) } == true ? "Remove from Favorites" : "Add to Favorites") { if let selected = store.selected { store.toggleBookmark(selected) } }.disabled(store.selected == nil)
+                Divider()
                 Button("Toggle Sidebar") { store.sidebarVisible.toggle() }.keyboardShortcut("\\")
                 Button("Toggle Details Sidebar") { store.inspectorVisible.toggle() }.keyboardShortcut("\\", modifiers: [.command, .option])
                 Divider()
@@ -67,16 +78,8 @@ import AppKit
                 Button("Default Document Text Size") { store.textSize = 15 }.keyboardShortcut("0")
             }
             CommandGroup(replacing: .help) {
-                Button("Backing Up and Recovering Notes") {
-                    let alert = NSAlert(); alert.messageText = "Keep a copy of your whole notes folder."
-                    alert.informativeText = "Back up the entire folder, including Attachments and the hidden .linear-notes folder, with Time Machine or a copy on another drive. Markdown files remain readable in other apps.\n\nUnsaved drafts are kept locally and recovered as separate notes after an unexpected exit. This is crash recovery, not version history or a backup. If the original changed outside the app, Keep both preserves both copies.\n\nDeleted notes can be restored from Finder’s Trash. To share a document, choose File → Print / Save as PDF."
-                    alert.addButton(withTitle: "OK"); alert.runModal()
-                }
-                Button("Keyboard Shortcuts") {
-                    let alert = NSAlert(); alert.messageText = "Make yourself at home."
-                    alert.informativeText = "⌘B  Bold     ⌘I  Italic     ⌘U  Underline\n⌘E  Inline code     ⌘K  Link or card\n⌘P  Find and switch notes\n⌘F  Find in document     ⌘⌥F  Find and replace\n⌘⇧P  Print / Save PDF\n⌘+ / −  Document text size     ⌘0  Default size\n⌘⇧S  Strikethrough\n⌘⇧7 / 8 / 9  Checklist / bullets / numbers\n⌘⌥1–4  Heading levels\n⌘⇧\\  Code block\n⌘N  New note     ⌘⇧N  New folder\n⌘O  Open notes folder     ⌘S  Save\n⌘\\  Toggle sidebar     ⌘⌥\\  Details and outline\n⌃⌘1 / 2 / 3  Live / reading / source\n\nType / at the start of a paragraph for blocks.\nDrag near a row’s edge to reorder. Drop in the middle of a folder to move inside it.\nRight-click any item to pin or bookmark it.\nRich cards: click to select, then click again to open."
-                    alert.runModal()
-                }
+                Button("Keyboard Shortcuts") { showShortcuts() }.keyboardShortcut("/")
+                Button("Backing Up and Recovering Notes") { showBackupHelp() }
             }
         }
     }
@@ -89,7 +92,7 @@ import AppKit
         DispatchQueue.main.async {
             if let window = NSApp.windows.first {
                 window.delegate = self; window.titlebarAppearsTransparent = true
-                window.backgroundColor = NSColor(Palette.sidebar)
+                window.backgroundColor = Palette.nsShell
                 window.titlebarSeparatorStyle = .none
                 window.setFrameAutosaveName("LinearNotesMainWindow")
             }

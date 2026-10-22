@@ -133,6 +133,7 @@ extension NotebookStore {
             })
         })
         do { try library.saveWorkspace(state) } catch { self.error = "The tab layout could not be saved: " + error.localizedDescription }
+        recordVisit()
     }
     func activate(_ pane: NotePane, tab: NoteTab? = nil) {
         guard panes.contains(where: { $0.id == pane.id }) else { return }

@@ -1,6 +1,6 @@
 # Overhaul v2 — Linear Fidelity Spec
 
-**Status:** Draft for review · 22 October 2026
+**Status:** Draft for review · 22 October 2026 · updated during step 2
 **Branch:** `experiments/claude/app-overhaul-v2`
 **Purpose:** Define exactly how Linear Notes changes so its shell, tabs, and writing experience read as Linear Documents running as a standalone Mac app.
 
@@ -116,7 +116,7 @@ Sampled values with recommended tokens. Dark is the reference appearance; light 
 | `shell` | `#090909` | `#ECECEC` | Title bar row, sidebar |
 | `canvas` | `#0F1011` | `#FCFCFD` | Content panel, document page |
 | `raised` | `#141417` | `#F4F4F5` | Search button, inline code, code blocks |
-| `control` | `#1F2025` | `#E4E4E6` | Compose button, active tab, pressed state |
+| `control` | `#1F2025` | `#EAEAEC` | Compose button, active tab, pressed state |
 | `selected` | `#1E1F23` | `#DEDEDE` | Selected sidebar row |
 | `hover` | `#18191C` | `#E6E6E7` | Hover rows and buttons |
 | `border` | `#232429` | `#E3E3E5` | Panel outline, toolbar outline |
@@ -124,7 +124,7 @@ Sampled values with recommended tokens. Dark is the reference appearance; light 
 | `text-primary` | `#F7F8F8` | `#161616` | Titles, headings, active labels |
 | `text-body` | `#E6E7E9` | `#1C1C1E` | Document body |
 | `text-secondary` | `#E3E4E5` | `#3C3C3F` | Sidebar labels, tab labels |
-| `text-muted` | `#959597` | `#6F6F73` | Section labels, icons, property labels |
+| `text-muted` | `#959597` | `#66666A` | Section labels, icons, property labels |
 | `text-faint` | `#5A5A5C` | `#ADADAD` | Placeholders, "Edited" timestamps |
 | `accent` | `#5E6AD2` | `#5E6AD2` | Links, focus, checked boxes, icon tiles |
 | `accent-tint` | `#1C1E30` | `#E8EAFB` | Document icon tile background |
@@ -174,7 +174,7 @@ Rules carried over from the reference:
 
 1. **Workspace switcher row.** A 20pt rounded-square tile with the notebook's initials on a stable colour, then the notebook name and a small chevron. The menu holds *Open another folder…*, *Import from Linear…*, and *Show in Finder*.
 2. **Search and compose buttons**, right-aligned on the same row. Search is a 28pt button on `raised`; compose is a 28pt button on `control`. Search opens the command menu, and compose creates a note with `⌘N`.
-3. **Primary rows:** *Recent* (recently opened notes) and *Drafts* (untitled notes, with a count badge).
+3. **Primary row:** *Recent*, which shows recently opened notes as a Linear-style list in the current tab.
 4. **Favorites** section: the existing bookmarks, renamed. The header star toggles membership, and drag-and-drop reordering stays.
 5. **Notes** section: the folder tree.
 6. **Help button**, a 24pt circle with `?` pinned bottom-left, opening keyboard shortcuts and help.
@@ -240,7 +240,7 @@ The page header is 44pt high, sits inside the content panel, and has a hairline 
 ### Right side
 
 - An `Edited 3m ago` timestamp in `text-faint`. It changes to `Saving…` and `Unsaved changes` as needed, and the save error banner stays.
-- A link button that copies a relative Markdown link to the note.
+- A link button that copies the note's file link. Links between notes still come from `@` and the link dialog, which keep them relative.
 - A 1pt vertical divider.
 - A details rail toggle (`⌘⌥\`).
 
@@ -350,7 +350,7 @@ These match Linear's editor:
 
 ## 10. Details rail
 
-- The details rail is a 280pt right rail on the `canvas` surface inside the content panel, separated by a hairline, as in Linear's issue view.
+- The details rail is a 280pt rounded panel on the `canvas` surface to the right of the content panel, with the same 8pt shell gutter used between split panes.
 - Its sections each have a 12pt `text-muted` label:
   - **Properties:** label and value rows (30pt, 16pt icon plus value).
   - **Note:** word count, character count, and reading time.
@@ -382,8 +382,6 @@ These keep the current shortcuts and add Linear's navigation:
 | Back / forward | `⌘[` / `⌘]` |
 | Toggle sidebar | `⌘\` |
 | Toggle details rail | `⌘⌥\` |
-| Favorite current note | `⌥F` |
-| Go to Favorites | `O` then `F` (outside text fields) |
 | Keyboard shortcuts help | `⌘/` |
 
 ---

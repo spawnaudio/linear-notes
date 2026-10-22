@@ -388,7 +388,7 @@ const LinearKeys = Extension.create({
     'Mod-Shift-8': () => this.editor.commands.toggleBulletList(),
     'Mod-Shift-9': () => this.editor.commands.toggleOrderedList(),
     'Mod-Shift-\\': () => this.editor.commands.toggleCodeBlock(),
-    'Mod-k': () => { showLink(); return true; },
+    'Mod-k': () => { if (mode === 'live' && !editor.state.selection.empty) showLink(); else send('quickOpen'); return true; },
     'Mod-Alt-0': () => this.editor.commands.setParagraph(),
     ...Object.fromEntries([1, 2, 3, 4].map(level => [`Mod-Alt-${level}`, () => this.editor.commands.toggleHeading({ level })]))
   }; }
@@ -687,6 +687,13 @@ window.addEventListener('keydown', e => {
   if (e.key === 'Enter' && e.target.closest('a') && (mode === 'reading' || e.metaKey)) { e.preventDefault(); openReference(e.target.closest('a').getAttribute('href')); }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's' && !e.shiftKey) { e.preventDefault(); send('save'); }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p' && !e.shiftKey) { e.preventDefault(); send('quickOpen'); }
+  // As in Linear: ⌘K links a selection, otherwise it opens the command menu.
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && !e.shiftKey && !e.altKey && !e.defaultPrevented) {
+    e.preventDefault();
+    const source = $('source');
+    const selected = mode === 'source' ? source.selectionStart !== source.selectionEnd : mode === 'live' && !editor.state.selection.empty;
+    if (selected) execute('link'); else send('quickOpen');
+  }
 });
 
 let printState;

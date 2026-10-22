@@ -46,6 +46,11 @@ struct NoteHeading: Identifiable { let id: Int; let level: Int; let text: String
     var focusNewNote: Bool { get { activeTab.focusNewNote } set { activeTab.focusNewNote = newValue } }
     var words: Int { get { activeTab.words } set { activeTab.words = newValue } }
     @Published var rootName = "My notes"
+    @Published var recent: [String] = []
+    @Published var favoritesCollapsed = UserDefaults.standard.bool(forKey: "favoritesCollapsed") { didSet { UserDefaults.standard.set(favoritesCollapsed, forKey: "favoritesCollapsed") } }
+    @Published var notesCollapsed = UserDefaults.standard.bool(forKey: "notesCollapsed") { didSet { UserDefaults.standard.set(notesCollapsed, forKey: "notesCollapsed") } }
+    @Published var visitIndex = -1
+    var visits: [NavigationVisit] = []
     var library: NoteLibrary?
     var baseline: String { get { activeTab.baseline } set { activeTab.baseline = newValue } }
     var dirty: Bool { get { activeTab.dirty } set { activeTab.dirty = newValue } }
@@ -105,7 +110,7 @@ struct NoteHeading: Identifiable { let id: Int; let level: Int; let text: String
             catch { if acquired { url.stopAccessingSecurityScopedResource() }; throw error }
             securityURL?.stopAccessingSecurityScopedResource(); securityURL = acquired ? url : nil
             sessionSave?.cancel(); resetWorkspace(); sessions = nextSessions
-            library = next; rootName = url.lastPathComponent; selected = nil; markdown = ""; baseline = ""; dirty = false
+            library = next; loadRecent(); rootName = url.lastPathComponent; selected = nil; markdown = ""; baseline = ""; dirty = false
             error = nil; conflict = false; saveFailed = false; items = try next.scan(); documentVersion += 1
             headings = []; activeHeading = -1; refreshSearch()
             if remember, let bookmark = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) { UserDefaults.standard.set(bookmark, forKey: "notesFolderBookmark") }
