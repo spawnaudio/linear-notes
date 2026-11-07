@@ -4,6 +4,9 @@ const outdir = '../Sources/LinearNotes/Resources/Editor';
 await mkdir(outdir, { recursive: true });
 await build({ entryPoints: ['src/editor.js'], bundle: true, outfile: `${outdir}/editor.js`, minify: true, target: 'safari17', legalComments: 'external' });
 await Promise.all(['index.html', 'editor.css'].map(name => copyFile(`src/${name}`, `${outdir}/${name}`)));
+// Inter (SIL OFL 1.1) is shared by the editor and the native chrome; see Typeface in Theme.swift.
+await mkdir(`${outdir}/fonts`, { recursive: true });
+await Promise.all(['InterVariable.ttf', 'InterVariable-Italic.ttf', 'LICENSE.txt'].map(name => copyFile(`src/fonts/${name}`, `${outdir}/fonts/${name}`)));
 const lock = JSON.parse(await readFile('package-lock.json', 'utf8'));
 const licenses = [];
 for (const [path, metadata] of Object.entries(lock.packages)) {

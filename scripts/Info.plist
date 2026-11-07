@@ -10,9 +10,9 @@
 <key>CFBundleShortVersionString</key><string>2.0.0</string>
 <key>CFBundleVersion</key><string>8</string>
 <key>UTExportedTypeDeclarations</key><array><dict>
-<key>UTTypeIdentifier</key><string>local.linearnotes.tab</string>
+<key>UTTypeIdentifier</key><string>local.linearnotes.overhaul.tab</string>
 <key>UTTypeConformsTo</key><array><string>public.data</string></array>
-<key>UTTypeDescription</key><string>Linear Notes tab</string>
+<key>UTTypeDescription</key><string>Linear Notes Overhaul tab</string>
 </dict></array>
 <key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>NSHighResolutionCapable</key><true/>

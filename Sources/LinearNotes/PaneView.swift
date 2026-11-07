@@ -3,7 +3,8 @@ import AppKit
 import UniformTypeIdentifiers
 import NotesCore
 
-let tabType = UTType(exportedAs: "local.linearnotes.tab", conformingTo: .data)
+// The overhaul experiment has its own identifiers so it can run beside the shipped app (spec §15).
+let tabType = UTType(exportedAs: "local.linearnotes.overhaul.tab", conformingTo: .data)
 
 struct NotePaneView: View {
     @ObservedObject var store: NotebookStore
@@ -24,30 +25,29 @@ private struct NotePaneContent: View {
             VStack(spacing: 0) {
                 tabstrip
                 VStack(spacing: 0) {
-                    topbar
-                    Rectangle().fill(Palette.line).frame(height: 1)
+                    header
+                    Rectangle().fill(Palette.divider).frame(height: 1)
                     if let error = tab.error {
                         HStack(spacing: 10) {
-                            Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
-                            Text(error).font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
+                            ChromeIcon("exclamationmark.circle", size: 13, color: Palette.warning)
+                            Text(error).font(Typeface.ui(12)).foregroundStyle(Palette.secondary).fixedSize(horizontal: false, vertical: true)
                             Spacer(minLength: 0)
                             if tab.conflict { Button("Keep both") { store.activate(pane); store.keepBoth() }.buttonStyle(.bordered) }
                             else if tab.saveFailed { Button("Retry") { tab.bridge?.flush { _ in } }.buttonStyle(.bordered) }
-                            else { Button { tab.error = nil } label: { Image(systemName: "xmark") }.accessibilityLabel("Dismiss error") }
-                        }.padding(12).background(Color.orange.opacity(0.07))
+                            else { Button { tab.error = nil } label: { ChromeIcon("xmark", size: 11) }.accessibilityLabel("Dismiss error") }
+                        }.padding(.horizontal, 16).padding(.vertical, 10).background(Palette.warning.opacity(0.08))
                     }
                     ZStack {
                         MarkdownEditorView(store: store, tab: tab, tabDragChanged: { hovering, edge in
                             dropping = hovering; dropDirection = edge
                         }, tabDropped: { id, edge in store.moveTab(id, to: pane.id, direction: edge) }).id(tab.id)
                             .opacity(tab.selected == nil ? 0 : 1).allowsHitTesting(tab.selected != nil)
-                        if tab.selected == nil { emptyState }
+                        if tab.selected == nil { if store.library == nil { emptyState } else { RecentView(store: store, pane: pane) } }
                     }
                 }
                 .background(Palette.canvas)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(store.panes.count > 1 && store.activePaneID == pane.id ? Palette.accent.opacity(0.65) : Palette.boundary, lineWidth: 1) }
-                statusbar
+                .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(store.panes.count > 1 && store.activePaneID == pane.id ? Palette.accent.opacity(0.55) : Palette.border, lineWidth: 1) }
             }
             .overlay {
                 if dropping {
@@ -67,139 +67,231 @@ private struct NotePaneContent: View {
         .clipped()
         .onChange(of: tab.mode) { store.saveWorkspace() }
     }
+
+    /// Linear's tab strip: shell background, quiet inactive tabs, one filled active tab, `+` after the last tab.
     var tabstrip: some View {
-        HStack(spacing: 4) {
-            if pane.id == store.layout.paneIDs.first {
-                if !store.sidebarVisible { Spacer().frame(width: 68) }
-                Button { store.sidebarVisible.toggle() } label: { Image(systemName: "sidebar.left") }
-                    .help("Toggle sidebar · ⌘\\").accessibilityLabel("Toggle sidebar")
+        HStack(spacing: 2) {
+            if pane.id == store.layout.paneIDs.first && !store.sidebarVisible {
+                Spacer().frame(width: 68)
+                NavigationButtons(store: store)
+                Spacer().frame(width: 6)
             }
             ScrollView(.horizontal) {
-                HStack(spacing: 4) {
+                HStack(spacing: 2) {
                     ForEach(pane.tabs) { item in
-                        let title = item.selected.map { NoteItem(path: $0, isFolder: false).title } ?? "New tab"
-                        let width = min(150, (title as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12)]).width) + 65
-                        HStack(spacing: 5) {
-                            TabDragButton(title: title, id: item.id) { store.selectTab(item, in: pane) }
-                                .frame(width: width - 35, height: 30)
-                                .accessibilityAddTraits(item.id == pane.selectedTabID ? .isSelected : [])
-                            Button { store.closeTab(item, in: pane) } label: { Image(systemName: "xmark").font(.system(size: 9)) }
-                                .accessibilityLabel("Close \(item.selected.map { NoteItem(path: $0, isFolder: false).title } ?? "tab")")
-                        }
-                        .frame(width: width, height: 30)
-                        .background(item.id == pane.selectedTabID ? Palette.control : .clear, in: RoundedRectangle(cornerRadius: 8))
-                        .overlay { RoundedRectangle(cornerRadius: 8).stroke(item.id == pane.selectedTabID ? Palette.line : .clear) }
-                        .contentShape(Rectangle())
-                        .overlay(alignment: dropAfter ? .trailing : .leading) {
-                            if dropTabID == item.id { Rectangle().fill(Palette.accent).frame(width: 2).allowsHitTesting(false) }
-                        }
-                        .onDrop(of: [tabType], delegate: TabDropDelegate(store: store, pane: pane, tabID: item.id, width: width, target: $dropTabID, after: $dropAfter))
-                        .contextMenu {
-                            ForEach(SplitDirection.allCases, id: \.self) { direction in
-                                Button(direction.title) { store.split(direction, paneID: pane.id, tabID: item.id) }
-                            }
-                            Divider()
-                            Button("Close tab") { store.closeTab(item, in: pane) }
-                        }
+                        let title = item.selected.map { NoteItem(path: $0, isFolder: false).title } ?? "Recent"
+                        let active = item.id == pane.selectedTabID
+                        let width = min(160, (title as NSString).size(withAttributes: [.font: Typeface.nsFont(13, 500)]).width) + 54
+                        TabChip(store: store, pane: pane, tab: item, title: title, active: active, width: width, dropTabID: $dropTabID, dropAfter: $dropAfter)
                     }
-                }
+                    Button { store.activate(pane); store.newTab() } label: { ChromeIcon("plus", size: 12) }
+                        .help("New tab · ⌘T").accessibilityLabel("New tab")
+                }.padding(.vertical, 6)
             }.scrollIndicators(.hidden)
-            Button { store.activate(pane); store.newTab() } label: { Image(systemName: "plus") }
-                .help("New tab · ⌘T").accessibilityLabel("New tab")
             Menu {
                 ForEach(SplitDirection.allCases, id: \.self) { direction in
                     Button(direction.title) { store.split(direction, paneID: pane.id) }
                 }
                 Divider(); Button("Close pane") { store.closePane(pane) }
-            } label: { Image(systemName: "rectangle.split.2x1") }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28)
+            } label: { ChromeIcon("rectangle.split.2x1", size: 12) }
+                .menuStyle(.button).buttonStyle(ChromeButtonStyle()).menuIndicator(.hidden)
                 .help("Split pane").accessibilityLabel("Split pane")
         }
-        .font(.system(size: 12)).foregroundStyle(Palette.secondary)
-        .padding(.horizontal, 8).frame(height: 46).background(Palette.sidebar)
+        .padding(.horizontal, 2).frame(height: ContentView.titlebarHeight).background(Palette.shell)
     }
-    var topbar: some View {
-        ViewThatFits(in: .horizontal) {
-            fullTopbar
-            HStack(spacing: 4) {
-                Text(tab.selected.map { NoteItem(path: $0, isFolder: false).title } ?? "Notes").lineLimit(1)
-                Spacer(minLength: 0)
-                Menu {
-                    ForEach(EditorMode.allCases, id: \.self) { mode in
-                        Button(mode.title) { store.activate(pane); tab.mode = mode; store.saveWorkspace() }
-                    }
-                    Divider()
-                    ForEach(SplitDirection.allCases, id: \.self) { direction in
-                        Button(direction.title) { store.split(direction, paneID: pane.id) }
-                    }
-                    Button("New tab") { store.activate(pane); store.newTab() }
-                    Button("Close pane") { store.closePane(pane) }
-                    Button("Note details") { store.activate(pane); store.inspectorVisible = true }
-                } label: { Image(systemName: "ellipsis") }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28).accessibilityLabel("Pane actions")
-            }.padding(.horizontal, 8).frame(height: 52).font(.system(size: 12)).foregroundStyle(Palette.secondary)
-        }.simultaneousGesture(TapGesture().onEnded { store.activate(pane) })
-    }
-    var fullTopbar: some View {
-        HStack(spacing: 13) {
-            if let selected = tab.selected {
-                Image(systemName: "doc.text").foregroundStyle(Palette.muted)
-                let item = NoteItem(path: selected, isFolder: false)
-                Text(item.parent.isEmpty ? "Notes" : item.parent.replacingOccurrences(of: "/", with: "  /  ")).foregroundStyle(Palette.muted).lineLimit(1)
-                Text("/").foregroundStyle(.quaternary)
-                Text(item.title).foregroundStyle(Palette.secondary).lineLimit(1).truncationMode(.middle)
-            } else { Text("Notes").foregroundStyle(Palette.muted) }
-            Spacer(minLength: 10)
-            if let selected = tab.selected {
-                HStack(spacing: 1) {
-                    ForEach(EditorMode.allCases, id: \.self) { mode in
-                        Button { store.activate(pane); tab.mode = mode; store.saveWorkspace() } label: {
-                            HStack(spacing: 5) { Image(systemName: mode.icon).font(.system(size: 13)); if tab.mode == mode && store.panes.count == 1 { Text(mode.title).font(.system(size: 12, weight: .medium)) } }.padding(.horizontal, 8).frame(height: 30)
-                                .background(tab.mode == mode ? Palette.control : .clear, in: RoundedRectangle(cornerRadius: 8))
-                        }.buttonStyle(ChromeButtonStyle()).foregroundStyle(tab.mode == mode ? Palette.primary : Palette.muted).help(mode.title).accessibilityLabel(mode.title).accessibilityAddTraits(tab.mode == mode ? .isSelected : [])
-                    }
-                }.padding(2).accessibilityElement(children: .contain).accessibilityLabel("Document mode")
-                Button { store.toggleBookmark(selected) } label: { Image(systemName: store.isBookmarked(selected) ? "bookmark.fill" : "bookmark").font(.system(size: 12)).foregroundStyle(store.isBookmarked(selected) ? Palette.accent : Palette.muted) }.buttonStyle(ChromeButtonStyle()).help("Bookmark note").accessibilityLabel("Bookmark note")
-                Menu {
-                    ForEach(SplitDirection.allCases, id: \.self) { direction in
-                        Button(direction.title) { store.split(direction, paneID: pane.id) }
-                    }
-                    Button("Close pane") { store.closePane(pane) }
-                    Divider()
-                    if let item = store.items.first(where: { $0.path == selected }) {
-                        Button(store.isPinned(selected) ? "Unpin note" : "Pin note") { store.togglePin(selected) }
-                        Button("Rename…") { store.activate(pane); store.rename(item) }
-                        Button("Show in Finder") { store.reveal(tab.selected) }
-                        Divider(); Button("Move to Trash…", role: .destructive) { store.activate(pane); store.trash(item) }
-                    }
-                } label: { Image(systemName: "ellipsis").font(.system(size: 13)) }.menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 30, height: 30).accessibilityLabel("Note actions")
+
+    /// The page header: breadcrumbs, more, favourite on the left; edited time, link, details on the right.
+    var header: some View {
+        HStack(spacing: 4) {
+            if !store.sidebarVisible && pane.id == store.layout.paneIDs.first {
+                Button { store.sidebarVisible = true } label: { ChromeIcon("sidebar.left", size: 13) }
+                    .help("Show sidebar · ⌘\\").accessibilityLabel("Show sidebar")
             }
-            Button { store.inspectorVisible.toggle() } label: {
-                Image(systemName: "sidebar.right").foregroundStyle(store.inspectorVisible ? Palette.primary : Palette.muted)
-            }.help("Toggle details · ⌘⌥\\").accessibilityLabel("Toggle details sidebar")
-                .accessibilityValue(store.inspectorVisible ? "Open" : "Closed")
-        }.font(.system(size: 13)).padding(.horizontal, store.panes.count == 1 ? 24 : 12).frame(height: 52)
-    }
-    var statusbar: some View {
-        HStack(spacing: 6) {
-            if tab.selected != nil {
-                Circle().fill(tab.conflict || tab.saveFailed ? Color.orange : Color.green).frame(width: 4, height: 4)
-                Text(tab.status)
+            if let selected = tab.selected {
+                let item = NoteItem(path: selected, isFolder: false)
+                Breadcrumbs(store: store, path: selected)
+                Menu { noteMenu(selected, item: item) } label: { ChromeIcon("ellipsis", size: 13) }
+                    .menuStyle(.button).buttonStyle(ChromeButtonStyle()).menuIndicator(.hidden).accessibilityLabel("Note actions")
+                Button { store.toggleBookmark(selected) } label: {
+                    ChromeIcon(store.isBookmarked(selected) ? "star.fill" : "star", size: 13, color: store.isBookmarked(selected) ? Palette.star : Palette.muted)
+                }.help(store.isBookmarked(selected) ? "Remove from Favorites · ⌥F" : "Add to Favorites · ⌥F")
+                    .accessibilityLabel(store.isBookmarked(selected) ? "Remove from Favorites" : "Add to Favorites")
+                Spacer(minLength: 12)
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    let saved = tab.status == "Saved locally"
+                    Text(saved ? store.editedLabel(selected, now: context.date) : tab.status)
+                        .font(Typeface.ui(12)).foregroundStyle(tab.conflict || tab.saveFailed ? Palette.warning : Palette.faint).lineLimit(1)
+                }.padding(.trailing, 6).layoutPriority(-1)
+                Button { store.copyLink(selected) } label: { ChromeIcon("link", size: 13) }
+                    .help("Copy file link").accessibilityLabel("Copy file link")
+                Rectangle().fill(Palette.border).frame(width: 1, height: 16).padding(.horizontal, 4)
+            } else {
+                HStack(spacing: 8) {
+                    ChromeIcon("clock", size: 13)
+                    Text(store.library == nil ? "Linear Notes" : "Recent").font(Typeface.ui(13, 500)).foregroundStyle(Palette.primary)
+                }.padding(.leading, 4)
                 Spacer()
-                Text("\(tab.words) words"); Text("·").padding(.horizontal, 3); Text("Markdown")
-            } else { Spacer(); Text("Markdown · Saved on your Mac"); Spacer() }
-        }.font(.system(size: 10)).foregroundStyle(Palette.muted).padding(.horizontal, 23).frame(height: 28).background(Palette.sidebar)
+            }
+            Button { store.activate(pane); store.inspectorVisible.toggle() } label: {
+                ChromeIcon("sidebar.right", size: 13, color: store.inspectorVisible ? Palette.primary : Palette.muted)
+            }.help("Toggle details · ⌘⌥\\").accessibilityLabel("Toggle details")
+                .accessibilityValue(store.inspectorVisible ? "Open" : "Closed")
+        }
+        .padding(.horizontal, 10).frame(height: 44)
+        .contentShape(Rectangle())
+        .simultaneousGesture(TapGesture().onEnded { store.activate(pane) })
     }
+
+    @ViewBuilder func noteMenu(_ selected: String, item: NoteItem) -> some View {
+        if let note = store.items.first(where: { $0.path == selected }) {
+            Button("Rename…") { store.activate(pane); store.rename(note) }
+        }
+        Button("Copy file link") { store.copyLink(selected) }
+        Menu("Mode") {
+            ForEach(EditorMode.allCases, id: \.self) { mode in
+                Toggle(mode.title, isOn: Binding(get: { tab.mode == mode }, set: { if $0 { store.activate(pane); tab.mode = mode; store.saveWorkspace() } }))
+            }
+        }
+        Divider()
+        ForEach(SplitDirection.allCases, id: \.self) { direction in
+            Button(direction.title) { store.split(direction, paneID: pane.id) }
+        }
+        if store.panes.count > 1 { Button("Close pane") { store.closePane(pane) } }
+        Divider()
+        Button(store.isPinned(selected) ? "Unpin from folder" : "Pin to top of folder") { store.togglePin(selected) }
+        Button("Print / Save as PDF…") { store.activate(pane); tab.bridge?.printDocument() }
+        if NoteLibrary.linearSource(in: tab.markdown) != nil {
+            Button("Refresh from Linear…") { store.activate(pane); store.linearRefreshVisible = true }
+        }
+        Button("Show in Finder") { store.reveal(selected) }
+        if let note = store.items.first(where: { $0.path == selected }) {
+            Divider(); Button("Move to Trash…", role: .destructive) { store.activate(pane); store.trash(note) }
+        }
+    }
+
     var emptyState: some View {
-        VStack(spacing: 17) {
-            Image(systemName: "doc.text").font(.system(size: 28, weight: .regular)).frame(width: 64, height: 64).background(Palette.panel, in: RoundedRectangle(cornerRadius: 12)).foregroundStyle(Palette.accent.opacity(0.7)).padding(.bottom, 4)
-            Text(store.library == nil ? "Your notes, on your Mac" : "Choose a note").font(.system(size: 28, weight: .semibold)).tracking(-0.6)
-            Text(store.library == nil ? "Open a folder to start writing in Markdown." : "Select a note from the sidebar or create a new one.").font(.system(size: 13)).lineSpacing(5).multilineTextAlignment(.center).foregroundStyle(Palette.secondary)
-            Button { if store.library == nil { store.chooseFolder() } else { store.activate(pane); store.create() } } label: {
-                Label(store.library == nil ? "Choose a notes folder" : "New note", systemImage: store.library == nil ? "folder" : "plus").font(.system(size: 12, weight: .medium)).padding(.horizontal, 16).padding(.vertical, 10).background(Palette.action, in: RoundedRectangle(cornerRadius: 8)).foregroundStyle(.white)
-            }.buttonStyle(.plain).padding(.top, 9)
-            Text(store.library == nil ? "Works with any folder of .md files" : "⌘N to start writing").font(.system(size: 10)).foregroundStyle(Palette.muted)
+        VStack(spacing: 16) {
+            Image(systemName: "doc.text.fill").font(.system(size: 18)).foregroundStyle(Palette.accent)
+                .frame(width: 32, height: 32).background(Palette.accentTint, in: RoundedRectangle(cornerRadius: 6))
+            Text("Your notes, on your Mac").font(Typeface.ui(28, 600)).foregroundStyle(Palette.primary)
+            Text("Open a folder of Markdown files to start writing.").font(Typeface.ui(15)).foregroundStyle(Palette.muted)
+            Button { store.chooseFolder() } label: {
+                Text("Open notes folder").font(Typeface.ui(13, 500)).foregroundStyle(.white)
+                    .padding(.horizontal, 14).frame(height: 32).background(Palette.accent, in: RoundedRectangle(cornerRadius: 6))
+            }.buttonStyle(.plain).padding(.top, 8)
         }.padding(32).frame(maxWidth: .infinity, maxHeight: .infinity).background(Palette.canvas)
+    }
+}
+
+/// One tab in the strip. The title is an AppKit button so tabs can start native drags.
+private struct TabChip: View {
+    @ObservedObject var store: NotebookStore
+    @ObservedObject var pane: NotePane
+    let tab: NoteTab
+    let title: String
+    let active: Bool
+    let width: CGFloat
+    @Binding var dropTabID: UUID?
+    @Binding var dropAfter: Bool
+    @State private var hovering = false
+    var body: some View {
+        HStack(spacing: 2) {
+            TabDragButton(title: title, id: tab.id, active: active, symbol: tab.selected == nil ? "clock" : "doc.text") { store.selectTab(tab, in: pane) }
+                .frame(width: width - 30, height: 28)
+                .accessibilityAddTraits(active ? .isSelected : [])
+            Button { store.closeTab(tab, in: pane) } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .medium)).foregroundStyle(Palette.muted) }
+                .buttonStyle(ChromeButtonStyle(size: 20)).opacity(active || hovering ? 1 : 0)
+                .accessibilityLabel("Close \(title)")
+        }
+        .padding(.leading, 4).padding(.trailing, 4)
+        .frame(width: width, height: 28)
+        .background(active ? Palette.control : hovering ? Palette.hover : .clear, in: RoundedRectangle(cornerRadius: 6))
+        .overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(active ? Palette.border : .clear) }
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .overlay(alignment: dropAfter ? .trailing : .leading) {
+            if dropTabID == tab.id { Rectangle().fill(Palette.accent).frame(width: 2).allowsHitTesting(false) }
+        }
+        .onDrop(of: [tabType], delegate: TabDropDelegate(store: store, pane: pane, tabID: tab.id, width: width, target: $dropTabID, after: $dropAfter))
+        .contextMenu {
+            ForEach(SplitDirection.allCases, id: \.self) { direction in
+                Button(direction.title) { store.split(direction, paneID: pane.id, tabID: tab.id) }
+            }
+            Divider()
+            Button("Close tab") { store.closeTab(tab, in: pane) }
+        }
+    }
+}
+
+/// Breadcrumbs from the notebook root to the note, with the final crumb brightest.
+private struct Breadcrumbs: View {
+    @ObservedObject var store: NotebookStore
+    let path: String
+    struct Crumb { let name: String; let path: String? }
+    var crumbs: [Crumb] {
+        let folders = path.split(separator: "/").dropLast().map(String.init)
+        let all = folders.indices.map { Crumb(name: folders[$0], path: folders[...$0].joined(separator: "/")) }
+        guard all.count > 3 else { return all }
+        return [all[0], Crumb(name: "…", path: nil), all[all.count - 1]]
+    }
+    var body: some View {
+        let shown = crumbs.map { (name: $0.name, path: $0.path) }
+        HStack(spacing: 4) {
+            ForEach(Array(shown.enumerated()), id: \.offset) { entry in
+                Button {
+                    if let folder = entry.element.path, !store.isExpanded(folder) { store.toggleExpanded(folder) }
+                    store.sidebarVisible = true
+                } label: {
+                    HStack(spacing: 6) {
+                        if entry.element.path != nil { ChromeIcon("folder", size: 12) }
+                        Text(entry.element.name).font(Typeface.ui(13, 500)).foregroundStyle(Palette.secondary).lineLimit(1)
+                    }.padding(.horizontal, 4).frame(height: 26).contentShape(Rectangle())
+                }.buttonStyle(.plain).disabled(entry.element.path == nil)
+                Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold)).foregroundStyle(Palette.faint)
+            }
+            HStack(spacing: 6) {
+                ChromeIcon("doc.text", size: 12)
+                Text(NoteItem(path: path, isFolder: false).title).font(Typeface.ui(13, 500)).foregroundStyle(Palette.primary).lineLimit(1).truncationMode(.middle)
+            }.padding(.horizontal, 4)
+        }.accessibilityElement(children: .contain).accessibilityLabel("Location")
+    }
+}
+
+/// The Recent page: a Linear-style list of recently opened notes, shown in a tab with no note.
+private struct RecentView: View {
+    @ObservedObject var store: NotebookStore
+    @ObservedObject var pane: NotePane
+    var body: some View {
+        let notes = store.recentItems.isEmpty ? Array(store.items.filter { !$0.isFolder }.prefix(20)) : store.recentItems
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(notes) { item in
+                    Button { store.activate(pane); store.select(item.path) } label: { RecentRow(store: store, item: item) }.buttonStyle(.plain)
+                    Rectangle().fill(Palette.divider).frame(height: 1).padding(.leading, 44)
+                }
+                if notes.isEmpty {
+                    Text("Notes you open appear here.").font(Typeface.ui(13)).foregroundStyle(Palette.faint).padding(24)
+                }
+            }.padding(.vertical, 8)
+        }.background(Palette.canvas)
+    }
+}
+
+private struct RecentRow: View {
+    @ObservedObject var store: NotebookStore
+    let item: NoteItem
+    @State private var hovering = false
+    var body: some View {
+        HStack(spacing: 12) {
+            ChromeIcon("doc.text", size: 13)
+            Text(item.title).font(Typeface.ui(13, 500)).foregroundStyle(Palette.primary).lineLimit(1)
+            if !item.parent.isEmpty { Text(item.parent).font(Typeface.ui(12)).foregroundStyle(Palette.muted).lineLimit(1).truncationMode(.head) }
+            Spacer(minLength: 12)
+            if store.isBookmarked(item.path) { ChromeIcon("star.fill", size: 10, color: Palette.star) }
+            Text(store.editedLabel(item.path).replacingOccurrences(of: "Edited ", with: "")).font(Typeface.ui(12)).foregroundStyle(Palette.faint)
+        }.padding(.horizontal, 16).frame(height: 44).contentShape(Rectangle())
+            .background(hovering ? Palette.hover : .clear)
+            .onHover { hovering = $0 }
     }
 }
 
@@ -215,17 +307,24 @@ func paneDropDirection(at point: CGPoint, in size: CGSize, header: CGFloat) -> S
 private struct TabDragButton: NSViewRepresentable {
     let title: String
     let id: UUID
+    let active: Bool
+    let symbol: String
     let select: () -> Void
     func makeNSView(context: Context) -> TabButton {
         let button = TabButton()
-        button.isBordered = false; button.font = .systemFont(ofSize: 12)
-        button.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: nil)
-        button.imagePosition = .imageLeft; button.lineBreakMode = .byTruncatingTail
+        button.isBordered = false
+        button.imagePosition = .imageLeft; button.imageHugsTitle = true; button.alignment = .left
+        button.lineBreakMode = .byTruncatingTail
         button.target = button; button.action = #selector(TabButton.selectTab)
         return button
     }
     func updateNSView(_ button: TabButton, context: Context) {
-        button.title = title; button.tabID = id; button.select = select
+        let color = active ? Palette.nsPrimary : Palette.nsMuted
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 12, weight: .regular))
+        button.contentTintColor = color
+        button.attributedTitle = NSAttributedString(string: " " + title, attributes: [.font: Typeface.nsFont(13, 500), .foregroundColor: color])
+        button.setAccessibilityLabel(title)
+        button.tabID = id; button.select = select
     }
 }
 
@@ -288,7 +387,7 @@ private struct PaneDropDelegate: DropDelegate {
     @Binding var direction: SplitDirection?
     func dropUpdated(info: DropInfo) -> DropProposal? {
         dropping = true
-        direction = paneDropDirection(at: info.location, in: size, header: 46)
+        direction = paneDropDirection(at: info.location, in: size, header: ContentView.titlebarHeight)
         return DropProposal(operation: info.hasItemsConforming(to: [tabType]) ? .move : .copy)
     }
     func dropExited(info: DropInfo) { dropping = false; direction = nil }

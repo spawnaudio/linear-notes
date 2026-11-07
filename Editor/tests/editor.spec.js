@@ -55,7 +55,8 @@ test('renders supported Markdown and does not rewrite on mode switches', async (
   await expect(page.locator('.tiptap h1')).toHaveText('A little room to think');
   await expect(page.locator('.callout')).toContainText('Remember this');
   await expect(page.locator('.callout strong')).toHaveText('useful');
-  await expect(page.locator('blockquote')).toHaveCSS('font-style', 'italic');
+  await expect(page.locator('blockquote')).toHaveCSS('border-left-width', '2px');
+  await expect(page.locator('blockquote')).toHaveCSS('font-style', 'normal');
   await expect(page.locator('.rich-card')).toHaveCount(1);
   await expect(page.locator('.property')).toHaveCount(3);
   await expect(page.locator('table')).toHaveCount(1);
@@ -406,7 +407,11 @@ test('outline reflects rendered headings, scroll position and modes; quick switc
   await page.keyboard.press('Meta+p');
   expect(await page.evaluate(() => window.messages.some(m => m.type === 'quickOpen'))).toBe(true);
   await page.evaluate(() => window.notes.setMode('live'));
+  await page.evaluate(() => { window.messages.length = 0; });
   await page.locator('.tiptap h1').click(); await page.keyboard.press('Meta+k');
+  expect(await page.evaluate(() => window.messages.some(m => m.type === 'quickOpen'))).toBe(true);
+  await expect(page.locator('#link-dialog')).toBeHidden();
+  await page.locator('.tiptap h1').dblclick(); await page.keyboard.press('Meta+k');
   await expect(page.locator('#link-dialog')).toBeVisible();
 });
 
@@ -554,7 +559,7 @@ test('Source replacement and native undo preserve exact frontmatter, whitespace 
 test('note picker inserts portable relative links and keyboard reading opens the native note', async ({ page }) => {
   await load(page, '# Index\n\nA reference.');
   await page.evaluate(() => window.notes.setNotes([{ title: 'Café plan', path: 'Projects/Café plan.md', reference: 'Projects/Caf%C3%A9%20plan.md' }]));
-  await page.locator('.tiptap p').click();
+  await page.locator('.tiptap p').dblclick();
   await page.keyboard.press('Meta+k');
   await page.getByRole('textbox', { name: 'Link to a note', exact: true }).fill('cafe');
   await page.locator('#note-links button').click();
@@ -573,8 +578,10 @@ test('document text scaling, focus and slash/image actions stay keyboard accessi
   const original = await markdown(page);
   await page.evaluate(() => window.notes.textSize(21));
   expect(await page.locator('.tiptap').evaluate(el => getComputedStyle(el).fontSize)).toBe('21px');
+  // As in Linear, the caret marks the writing surface instead of a focus ring around the page.
   await page.locator('.tiptap').focus();
-  expect(await page.locator('.tiptap').evaluate(el => getComputedStyle(el).outlineStyle)).toBe('solid');
+  expect(await page.locator('.tiptap').evaluate(el => getComputedStyle(el).caretColor)).toBe('rgb(94, 106, 210)');
+  expect(await page.locator('.tiptap').evaluate(el => getComputedStyle(el).outlineStyle)).toBe('none');
   await page.locator('.tiptap p').click(); await page.keyboard.press('End'); await page.keyboard.press('Enter'); await page.keyboard.type('/');
   await expect(page.locator('.tiptap')).toHaveAttribute('aria-expanded', 'true');
   await page.keyboard.press('ArrowDown');
@@ -607,4 +614,110 @@ test('print produces a clean light document and restores exact source and positi
   await expect(page.locator('#source')).toBeVisible();
   expect(await page.locator('#source').evaluate(el => [el.selectionStart, el.selectionEnd])).toEqual([20, 25]);
   expect(await markdown(page)).toBe(fixture);
+});
+
+test('the title is the file name and renames in place like a Linear document', async ({ page }) => {
+  await load(page, '# Body\n\nFirst line.');
+  const renames = () => page.evaluate(() => window.messages.filter(m => m.type === 'rename'));
+  await expect(page.locator('#title')).toHaveText('test');
+  await page.locator('#title').click(); await page.keyboard.press('End'); await page.keyboard.type(' plan/v2: draft');
+  await page.keyboard.press('Enter');
+  expect(await renames()).toEqual([{ type: 'rename', id: 'test.md', title: 'test plan-v2- draft' }]);
+  await expect(page.locator('#title')).toHaveText('test plan-v2- draft');
+  await expect(page.locator('.tiptap')).toBeFocused();
+  await page.keyboard.press('ArrowUp');
+  await expect(page.locator('#title')).toBeFocused();
+  await page.keyboard.press('ControlOrMeta+a'); await page.keyboard.press('Backspace');
+  await expect(page.locator('#title')).toHaveClass(/empty/);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#title')).toHaveText('test plan-v2- draft');
+  expect(await renames()).toHaveLength(1);
+  expect(await markdown(page)).toBe('# Body\n\nFirst line.');
+  await page.evaluate(() => window.notes.load({ id: 'Notes/Untitled 2.md', markdown: '', mode: 'live', focus: true }));
+  await expect(page.locator('#title')).toBeFocused();
+  expect(await page.evaluate(() => window.getSelection().toString())).toBe('Untitled 2');
+  await page.evaluate(() => window.notes.setMode('reading'));
+  await expect(page.locator('#title')).toHaveAttribute('contenteditable', 'false');
+});
+
+test('collapsible sections round-trip as details and open from shortcuts and heading handles', async ({ page }) => {
+  const source = '<details open>\n<summary>More &amp; less</summary>\n\nHidden **text**.\n\n- [ ] Inside\n\n</details>\n\nAfter.';
+  await load(page, source);
+  await expect(page.locator('.details-summary')).toHaveText('More & less');
+  await expect(page.locator('.details-content')).toBeVisible();
+  await page.locator('.details-toggle').click();
+  await expect(page.locator('.details-content')).toBeHidden();
+  expect(await markdown(page)).toBe(source.replace('<details open>', '<details>'));
+  await page.locator('.details-toggle').click();
+  await page.locator('.tiptap > p').last().click(); await page.keyboard.press('End'); await page.keyboard.type(' Done.');
+  expect(await markdown(page)).toBe(source.replace('After.', 'After. Done.'));
+  await load(page, '');
+  await page.locator('.tiptap').click(); await page.keyboard.type('>>> Summary');
+  await page.keyboard.press('Enter'); await page.keyboard.type('Body text');
+  expect(await markdown(page)).toBe('<details open>\n<summary>Summary</summary>\n\nBody text\n\n</details>');
+  await load(page, '# Plan\n\nIntro.\n\n## Steps\n\nOne.\n\n# Next\n\nLater.');
+  await page.locator('.tiptap h1').first().hover();
+  await expect(page.locator('#heading-handle')).toBeVisible();
+  await page.locator('#heading-handle').click();
+  await page.getByRole('menuitem', { name: 'Copy link' }).click();
+  expect(await page.evaluate(() => window.messages.filter(m => m.type === 'copy').at(-1).text)).toBe('[Plan](test.md#plan)');
+  await page.locator('.tiptap h1').first().hover(); await page.locator('#heading-handle').click();
+  await page.getByRole('menuitem', { name: 'Make collapsible' }).click();
+  expect(await markdown(page)).toBe('<details open>\n<summary>Plan</summary>\n\nIntro.\n\n## Steps\n\nOne.\n\n</details>\n\n# Next\n\nLater.');
+});
+
+test('slash menu groups blocks, mentions link notes, and Linear actions reach the host', async ({ page }) => {
+  await load(page, '');
+  await page.evaluate(() => window.notes.setNotes([{ title: 'Roadmap', path: 'Plans/Roadmap.md', reference: 'Plans/Roadmap.md' }, { title: 'Ideas', path: 'Ideas.md', reference: 'Ideas.md' }]));
+  await page.locator('.tiptap').click(); await page.keyboard.type('/');
+  await expect(page.locator('.menu-label')).toHaveText(['Text', 'Insert', 'Linear']);
+  await expect(page.locator('.slash-option', { hasText: 'Refresh from Linear' })).toHaveCount(0);
+  await page.keyboard.type('import'); await page.keyboard.press('Enter');
+  expect(await page.evaluate(() => window.messages.filter(m => m.type === 'linear'))).toEqual([{ type: 'linear', id: 'test.md', action: 'import' }]);
+  await page.keyboard.type('See @road');
+  await expect(page.locator('.slash-option')).toHaveCount(1);
+  await expect(page.locator('.slash-hint')).toHaveText('Plans');
+  await page.keyboard.press('Enter'); await page.keyboard.type('next.');
+  expect(await markdown(page)).toBe('See [Roadmap](Plans/Roadmap.md) next.');
+  await load(page, '---\nlinearDocumentId: 0f2c\n---\n');
+  await page.locator('.tiptap').click(); await page.keyboard.type('/refresh');
+  await expect(page.locator('.slash-option')).toHaveText([/Refresh from Linear/]);
+  await page.screenshot({ path: '../artifacts/slash-linear.png' });
+});
+
+test('checklists toggle with Command-Return, code blocks copy, and the outline tracks headings', async ({ page }) => {
+  await load(page, '- [ ] Parent\n  - [ ] Child\n\n```js\nconst a = 1;\n```\n\n# One\n\nText\n\n## Two\n\nText\n\n# Three');
+  await page.locator('[data-type=taskItem] p').first().click();
+  await page.keyboard.press('ControlOrMeta+Enter');
+  expect(await markdown(page)).toContain('- [x] Parent\n  - [ ] Child');
+  await expect(page.locator('li[data-checked=true] > div').first()).toHaveCSS('text-decoration-line', 'none');
+  await page.keyboard.press('ControlOrMeta+Enter'); await page.keyboard.press('ControlOrMeta+Shift+Enter');
+  expect(await markdown(page)).toContain('- [x] Parent\n  - [x] Child');
+  await expect(page.locator('.code-language')).toHaveText('js');
+  await page.locator('.code-block').hover(); await page.getByRole('button', { name: 'Copy code' }).click();
+  expect(await page.evaluate(() => window.messages.filter(m => m.type === 'copy').at(-1).text)).toBe('const a = 1;');
+  await expect(page.locator('.outline-mark')).toHaveCount(3);
+  await page.locator('#outline-rail').hover({ force: true });
+  await expect(page.locator('.outline-item')).toHaveText(['One', 'Two', 'Three']);
+  await page.locator('.outline-item', { hasText: 'Three' }).click();
+  await expect.poll(() => page.evaluate(() => window.messages.filter(m => m.type === 'headingActive').at(-1)?.active)).toBe(2);
+});
+
+test('native SF Symbol masks replace text glyphs across the editor chrome', async ({ page }) => {
+  await load(page, '# Heading\n\nSelect these words');
+  const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=';
+  await page.evaluate(pixel => window.notes.setIcons({ bold: pixel, 'doc.text.fill': pixel, 'javascript:alert(1)': pixel, italic: 'https://example.com/x.png' }), pixel);
+  await expect(page.locator('#bubble [data-command=bold] .icon')).toHaveClass(/masked/);
+  await expect(page.locator('#bubble [data-command=italic] .icon')).toHaveText('I');
+  await expect(page.locator('#doc-icon .icon')).toHaveClass(/masked/);
+});
+
+test('the Linear document page renders in both appearances', async ({ page }) => {
+  await page.setViewportSize({ width: 1100, height: 900 });
+  await load(page, fixture.replace('# A little room', '<details open>\n<summary>Background</summary>\n\nWhy this exists.\n\n</details>\n\n# A little room').replace('This is', 'See [Roadmap](Roadmap.md). This is'));
+  for (const colorScheme of ['light', 'dark']) {
+    await page.emulateMedia({ colorScheme });
+    await page.screenshot({ path: `../artifacts/document-${colorScheme}.png`, fullPage: true });
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1100);
 });

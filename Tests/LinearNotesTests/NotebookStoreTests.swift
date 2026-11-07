@@ -33,4 +33,23 @@ final class NotebookStoreTests: XCTestCase {
             XCTAssertEqual(try store.library!.read(selected), "Retry this")
         }
     }
+
+    func testTitleRenameAndBackForwardHistory() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try await MainActor.run {
+            let store = NotebookStore(root: root)
+            defer { store.poller?.invalidate(); store.autosave?.cancel(); store.sessionSave?.cancel() }
+            store.create(); store.create(); XCTAssertEqual(store.selected, "Untitled 2.md")
+            store.retitle("Untitled 2.md", to: "  Plan  "); XCTAssertEqual(store.selected, "Plan.md")
+            XCTAssertTrue(store.items.contains { $0.path == "Plan.md" }); XCTAssertFalse(store.items.contains { $0.path == "Untitled 2.md" })
+            store.retitle("Plan.md", to: "Untitled"); XCTAssertEqual(store.selected, "Plan.md"); XCTAssertNotNil(store.error)
+            XCTAssertEqual(try store.library!.read("Plan.md"), "")
+            store.select("Untitled.md"); XCTAssertEqual(store.selected, "Untitled.md"); XCTAssertTrue(store.canGoBack)
+            store.goBack(); XCTAssertEqual(store.selected, "Plan.md")
+            store.goForward(); XCTAssertEqual(store.selected, "Untitled.md"); XCTAssertFalse(store.canGoForward)
+            XCTAssertEqual(Array(store.recentItems.map(\.path).prefix(2)), ["Untitled.md", "Plan.md"])
+        }
+    }
 }

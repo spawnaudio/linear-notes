@@ -3,60 +3,29 @@ import AppKit
 import UniformTypeIdentifiers
 import NotesCore
 
-enum Palette {
-    static func adaptive(_ dark: UInt32, _ light: UInt32) -> Color {
-        Color(nsColor: NSColor(name: nil) { appearance in
-            let value = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
-            return NSColor(red: CGFloat((value >> 16) & 255) / 255, green: CGFloat((value >> 8) & 255) / 255, blue: CGFloat(value & 255) / 255, alpha: 1)
-        })
-    }
-    static let canvas = adaptive(0x1F2023, 0xFFFFFF)
-    static let sidebar = adaptive(0x17181B, 0xF5F5F7)
-    static let panel = adaptive(0x292A2E, 0xEAEAEE)
-    static let control = adaptive(0x303138, 0xE2E3E8)
-    static let hover = adaptive(0x35363C, 0xEDEEF2)
-    static let boundary = adaptive(0x2B2C31, 0xDDDEE4)
-    static let line = adaptive(0x383A40, 0xDDDEE4)
-    static let primary = adaptive(0xF1F1F3, 0x292A2E)
-    static let secondary = adaptive(0xC6C7CB, 0x555861)
-    static let muted = adaptive(0x92949B, 0x636670)
-    static let action = Color(red: 91 / 255, green: 110 / 255, blue: 225 / 255)
-    static let accent = adaptive(0x8794F5, 0x5B6EE1)
-}
-
-struct ChromeButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var enabled
-    @Environment(\.isFocused) private var focused
-    @State private var hovering = false
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .frame(minWidth: 30, minHeight: 30)
-            .background(configuration.isPressed ? Palette.control : hovering && enabled ? Palette.hover : .clear, in: RoundedRectangle(cornerRadius: 8))
-            .opacity(enabled ? 1 : 0.5)
-            .overlay { RoundedRectangle(cornerRadius: 8).stroke(focused ? Palette.accent : .clear, lineWidth: 2) }
-            .onHover { hovering = $0 }
-    }
-}
-
 struct ContentView: View {
     @ObservedObject var store: NotebookStore
     @Environment(\.accessibilityReduceMotion) var reduceMotion
+    static let sidebarWidth: CGFloat = 244
+    static let titlebarHeight: CGFloat = 40
     var body: some View {
         HStack(spacing: 0) {
-            sidebar.frame(width: 280).frame(width: store.sidebarVisible ? 280 : 0, alignment: .leading).clipped().opacity(store.sidebarVisible ? 1 : 0).allowsHitTesting(store.sidebarVisible).accessibilityHidden(!store.sidebarVisible)
+            sidebar.frame(width: Self.sidebarWidth).frame(width: store.sidebarVisible ? Self.sidebarWidth : 0, alignment: .leading).clipped().opacity(store.sidebarVisible ? 1 : 0).allowsHitTesting(store.sidebarVisible).accessibilityHidden(!store.sidebarVisible)
             paneTree(store.layout)
-                .padding(.trailing, store.inspectorVisible ? 0 : 8)
                 .padding(.leading, store.sidebarVisible ? 0 : 8)
-            if store.inspectorVisible { inspector.frame(width: 280) }
+                .padding(.trailing, 8)
+            if store.inspectorVisible { inspector.frame(width: 280).padding(.trailing, 8) }
         }
-        .background(Palette.sidebar)
-        .foregroundStyle(Palette.primary)
+        .padding(.bottom, 8)
+        .background(Palette.shell)
+        .foregroundStyle(Palette.secondary)
+        .font(Typeface.ui(13, 500))
         .tint(Palette.accent)
         .buttonStyle(ChromeButtonStyle())
         .frame(minWidth: store.inspectorVisible ? 1100 : 820, minHeight: 540)
         .ignoresSafeArea(edges: [.leading, .trailing, .bottom])
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: store.sidebarVisible)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: store.inspectorVisible)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: store.sidebarVisible)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: store.inspectorVisible)
         .sheet(isPresented: $store.quickOpenVisible) { QuickOpenView(store: store) }
         .sheet(isPresented: $store.linearImportVisible) { LinearImportView(store: store) }
         .sheet(isPresented: $store.linearRefreshVisible) { LinearRefreshView(store: store) }
@@ -64,76 +33,69 @@ struct ContentView: View {
 
     var sidebar: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Spacer().frame(width: 68)
-                Text("Linear Notes").font(.system(size: 12, weight: .semibold)).offset(y: -9)
+            HStack(spacing: 2) {
                 Spacer()
-            }.frame(height: 46)
-            HStack(spacing: 9) {
-                Image(systemName: "square.stack.3d.up.fill").font(.system(size: 15)).foregroundStyle(Palette.accent)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(store.rootName).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                    Text("Local workspace").font(.system(size: 10)).foregroundStyle(Palette.muted)
-                }
-                Spacer(minLength: 0)
-                Menu { Button("Import from Linear…") { store.linearImportVisible = true }; Divider(); Button("Open another folder…", action: store.chooseFolder); Button("Show in Finder") { store.reveal("") } } label: { Image(systemName: "chevron.down").font(.system(size: 9)) }.menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28, height: 28).accessibilityLabel("Workspace actions")
-            }.padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 18)
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(Palette.muted)
-                TextField("Find a note…", text: $store.query).textFieldStyle(.plain).font(.system(size: 13)).accessibilityLabel("Find a note")
-                if !store.query.isEmpty { Button { store.query = "" } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 11)).foregroundStyle(Palette.muted) }.buttonStyle(ChromeButtonStyle()).accessibilityLabel("Clear search") }
-            }.padding(.horizontal, 10).padding(.vertical, 8).background(Palette.canvas.opacity(0.6), in: RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.line)).padding(.horizontal, 14)
+                NavigationButtons(store: store)
+            }.padding(.horizontal, 8).frame(height: Self.titlebarHeight)
+            HStack(spacing: 6) {
+                Menu {
+                    Button("Import from Linear…") { store.linearImportVisible = true }
+                    Divider()
+                    Button("Open another folder…", action: store.chooseFolder)
+                    Button("Show in Finder") { store.reveal("") }
+                } label: {
+                    HStack(spacing: 8) {
+                        IdentityTile(name: store.rootName)
+                        Text(store.rootName).font(Typeface.ui(13, 600)).foregroundStyle(Palette.primary).lineLimit(1)
+                        Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(Palette.muted)
+                    }.padding(.horizontal, 4).frame(height: 28).contentShape(Rectangle())
+                }.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().accessibilityLabel("Notebook: \(store.rootName)")
+                Spacer(minLength: 4)
+                Button { store.quickOpenVisible = true } label: { ChromeIcon("magnifyingglass", size: 13, color: Palette.secondary) }
+                    .background(Palette.raised, in: RoundedRectangle(cornerRadius: 6))
+                    .help("Search · ⌘K").accessibilityLabel("Search")
+                Button { store.create() } label: { ChromeIcon("square.and.pencil", size: 13, color: Palette.primary) }
+                    .background(Palette.control, in: RoundedRectangle(cornerRadius: 6))
+                    .help("New note · ⌘N").accessibilityLabel("New note")
+            }.padding(.horizontal, 10).padding(.bottom, 12)
             ScrollView {
                 VStack(alignment: .leading, spacing: 1) {
-                    if store.searchTerm.isEmpty {
-                        sectionLabel("Bookmarks")
-                            .onDrop(of: [.text], isTargeted: nil) { loadDrop($0) { store.bookmarkDrop($0) } }
+                    NavigationRow(title: "Recent", icon: "clock", selected: store.library != nil && store.selected == nil) { store.showRecent() }
+                        .disabled(store.library == nil)
+                    SectionHeader(title: "Favorites", expanded: !store.favoritesCollapsed) { store.favoritesCollapsed.toggle() }
+                        .onDrop(of: [.text], isTargeted: nil) { loadDrop($0) { store.bookmarkDrop($0) } }
+                    if !store.favoritesCollapsed {
                         if store.bookmarks.isEmpty {
-                            Text("Drag a note here to bookmark it.").font(.system(size: 11)).foregroundStyle(Palette.muted).padding(.leading, 21).padding(.vertical, 8)
+                            Text("Star a note or drag it here.").font(Typeface.ui(12)).foregroundStyle(Palette.faint).padding(.leading, 32).frame(height: 28)
                         }
                         ForEach(store.bookmarks) { item in row(item, depth: 0, bookmark: true) }
-                        sectionLabel("Notes")
-                            .onDrop(of: [.text], isTargeted: nil) { loadDrop($0) { store.move($0, parent: "") } }
-                        tree(parent: "", depth: 0)
-                        if store.items.isEmpty {
-                            Button { store.create() } label: { Label("Write your first note", systemImage: "plus").font(.system(size: 11)) }.buttonStyle(.plain).foregroundStyle(Palette.secondary).padding(20)
-                        }
-                        Color.clear.frame(height: 60).contentShape(Rectangle()).onDrop(of: [.text], isTargeted: nil) { loadDrop($0) { store.move($0, parent: "") } }
-                    } else {
-                        sectionLabel("Search results")
-                        ForEach(store.searchResults) { result in
-                            Button { store.openSearchResult(result.id) } label: { SearchResultRow(result: result, query: store.query) }.buttonStyle(.plain)
-                                .background(store.selected == result.id ? Palette.control : .clear, in: RoundedRectangle(cornerRadius: 8))
-                        }
-                        if let error = store.searchError { Text(error).font(.system(size: 12)).foregroundStyle(.orange).padding(10) }
-                        if store.searchResults.isEmpty { Text(store.searching ? "Searching…" : "No notes found").font(.system(size: 12)).foregroundStyle(Palette.secondary).padding(20) }
                     }
-                }.padding(.horizontal, 8).padding(.top, 14)
-            }
-            Spacer(minLength: 0)
-            HStack(spacing: 9) {
-                Image(systemName: "internaldrive").font(.system(size: 11))
-                Text("On your Mac").font(.system(size: 10))
-                Spacer()
+                    SectionHeader(title: "Notes", expanded: !store.notesCollapsed, add: { store.create() }, addLabel: "New note") { store.notesCollapsed.toggle() }
+                        .onDrop(of: [.text], isTargeted: nil) { loadDrop($0) { store.move($0, parent: "") } }
+                    if !store.notesCollapsed {
+                        tree(parent: "", depth: 0)
+                        if store.library == nil {
+                            NavigationRow(title: "Open a notes folder…", icon: "folder", selected: false, action: store.chooseFolder)
+                        } else if store.items.isEmpty {
+                            NavigationRow(title: "Write your first note", icon: "plus", selected: false) { store.create() }
+                        }
+                    }
+                    Color.clear.frame(height: 60).contentShape(Rectangle()).onDrop(of: [.text], isTargeted: nil) { loadDrop($0) { store.move($0, parent: "") } }
+                }.padding(.horizontal, 8)
+            }.scrollIndicators(.never)
+            HStack {
                 Menu {
-                    Button("New note") { store.create() }
-                    Button("New folder…") { store.create(folder: true) }
-                    Divider(); Button("Open folder…", action: store.chooseFolder)
-                } label: { Image(systemName: "plus").font(.system(size: 14)) }.menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 30, height: 30).accessibilityLabel("New note or folder").help("New note or folder")
-            }.foregroundStyle(Palette.secondary).padding(.horizontal, 19).frame(height: 43)
-        }.background(Palette.sidebar)
+                    Button("Keyboard shortcuts") { showShortcuts() }
+                    Button("Backing up and recovering notes") { showBackupHelp() }
+                } label: {
+                    Image(systemName: "questionmark").font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.muted)
+                        .frame(width: 24, height: 24).background(Palette.raised, in: Circle()).overlay { Circle().stroke(Palette.border) }
+                }.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().accessibilityLabel("Help")
+                Spacer()
+            }.padding(.horizontal, 14).frame(height: 44)
+        }.background(Palette.shell)
     }
 
-    func sectionLabel(_ title: String) -> some View {
-        HStack {
-            Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.muted)
-            Spacer()
-            if title == "Notes" {
-                Button { store.quickOpenVisible = true } label: { Image(systemName: "magnifyingglass").font(.system(size: 11)) }.help("Search notes · ⌘P").accessibilityLabel("Search notes")
-                Button { store.create() } label: { Image(systemName: "plus").font(.system(size: 12)).frame(width: 28, height: 28) }.buttonStyle(ChromeButtonStyle()).accessibilityLabel("New note").foregroundStyle(Palette.muted).help("New note")
-            }
-        }.padding(.horizontal, 12).padding(.top, title == "Notes" ? 23 : 7).padding(.bottom, 9)
-    }
     func tree(parent: String, depth: Int) -> AnyView {
         AnyView(ForEach(store.children(parent)) { item in
             row(item, depth: depth)
@@ -166,94 +128,88 @@ struct ContentView: View {
     var inspector: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Note details").font(.system(size: 13, weight: .semibold))
+                Text("Details").font(Typeface.ui(13, 500)).foregroundStyle(Palette.primary)
                 Spacer()
-                Button { store.inspectorVisible = false } label: { Image(systemName: "xmark") }
-                    .accessibilityLabel("Close details sidebar").help("Close details")
-            }.padding(.horizontal, 20).frame(height: 46)
+                Button { store.inspectorVisible = false } label: { ChromeIcon("xmark", size: 11) }
+                    .accessibilityLabel("Close details").help("Close details · ⌘⌥\\")
+            }.padding(.leading, 16).padding(.trailing, 8).frame(height: 44)
+            Rectangle().fill(Palette.divider).frame(height: 1)
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     if let selected = store.selected {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Outline").foregroundStyle(Palette.muted)
-                            if store.mode == .source { Text("View the outline in Live Preview or Reading.").font(.system(size: 12)).foregroundStyle(Palette.muted) }
-                            else if store.headings.isEmpty { Text("Add headings to navigate this note.").font(.system(size: 12)).foregroundStyle(Palette.muted) }
-                            else {
-                                ForEach(store.headings) { heading in
-                                    Button { store.bridge?.jumpToHeading(heading.id) } label: {
-                                        Text(heading.text.isEmpty ? "Untitled heading" : heading.text).lineLimit(2).multilineTextAlignment(.leading)
-                                            .padding(.leading, CGFloat(max(0, heading.level - 1) * 12)).padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                                    }.buttonStyle(.plain).background(store.activeHeading == heading.id ? Palette.control : .clear, in: RoundedRectangle(cornerRadius: 6))
-                                        .accessibilityAddTraits(store.activeHeading == heading.id ? .isSelected : [])
+                        railSection("Properties", action: store.mode == .reading ? nil : { store.bridge?.showProperties() }, actionIcon: "plus", actionLabel: "Edit properties") {
+                            if store.propertyRows.isEmpty {
+                                Text(store.properties.isEmpty ? "No properties" : store.properties).foregroundStyle(Palette.faint)
+                            } else {
+                                ForEach(Array(store.propertyRows.enumerated()), id: \.offset) { entry in
+                                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                        Text(entry.element.name).foregroundStyle(Palette.muted).frame(width: 84, alignment: .leading).lineLimit(1)
+                                        Text(entry.element.value.isEmpty ? "—" : entry.element.value).foregroundStyle(Palette.secondary)
+                                            .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+                                    }.frame(minHeight: 30)
                                 }
                             }
                         }
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                Text("Properties").foregroundStyle(Palette.muted)
-                                Spacer()
-                                Button { store.bridge?.showProperties() } label: { Image(systemName: "square.and.pencil") }
-                                    .disabled(store.mode == .reading).help("Edit properties").accessibilityLabel("Edit properties")
-                            }
-                            VStack(alignment: .leading, spacing: 14) {
-                                if store.propertyRows.isEmpty {
-                                    Text(store.properties.isEmpty ? "No properties yet" : store.properties)
-                                        .foregroundStyle(Palette.muted)
-                                } else {
-                                    ForEach(Array(store.propertyRows.enumerated()), id: \.offset) { entry in
-                                        HStack(alignment: .top, spacing: 12) {
-                                            Text(entry.element.name).foregroundStyle(Palette.muted).frame(width: 76, alignment: .leading)
-                                            Text(entry.element.value.isEmpty ? "—" : entry.element.value)
-                                                .foregroundStyle(Palette.secondary).frame(maxWidth: .infinity, alignment: .leading)
-                                        }
-                                    }
-                                }
-                            }.font(.system(size: 12)).textSelection(.enabled)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(12).background(Palette.canvas, in: RoundedRectangle(cornerRadius: 8))
+                        railSection("Note") {
+                            railRow("textformat.size", store.words == 1 ? "1 word" : "\(store.words) words")
+                            railRow("book", "\(max(1, (store.words + 199) / 200)) min read")
+                            railRow("clock", store.editedLabel(selected).isEmpty ? store.status : store.editedLabel(selected))
                         }
-                        VStack(alignment: .leading, spacing: 12) {
-                            if let source = store.propertyRows.first(where: { $0.name == "linearDocumentUrl" })?.value,
-                               let url = URL(string: source.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))), url.scheme == "https", url.host == "linear.app" {
-                                Link("Open original in Linear", destination: url)
+                        if let source = store.propertyRows.first(where: { $0.name == "linearDocumentUrl" })?.value,
+                           let url = URL(string: source.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))), url.scheme == "https", url.host == "linear.app" {
+                            railSection("Linear") {
+                                Link(destination: url) { railRow("arrow.up.right", "Open original") }
+                                if NoteLibrary.linearSource(in: store.markdown) != nil {
+                                    Button { store.linearRefreshVisible = true } label: { railRow("arrow.clockwise", "Refresh from Linear…") }.buttonStyle(.plain)
+                                }
                             }
-                            if NoteLibrary.linearSource(in: store.markdown) != nil {
-                                Button("Refresh from Linear…") { store.linearRefreshVisible = true }
+                        } else if NoteLibrary.linearSource(in: store.markdown) != nil {
+                            railSection("Linear") {
+                                Button { store.linearRefreshVisible = true } label: { railRow("arrow.clockwise", "Refresh from Linear…") }.buttonStyle(.plain)
+                            }
+                        }
+                        railSection("File") {
+                            Text(selected).foregroundStyle(Palette.muted).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                            if let file = store.fileDetails(selected) {
+                                railRow("internaldrive", file.size)
+                                if let created = file.created { railRow("calendar", "Created " + created) }
                             }
                             if !NoteLibrary.remoteImageURLs(in: store.markdown).isEmpty {
-                                Button(store.savingImages ? "Saving images…" : "Save images locally") { store.saveImagesLocally() }
-                                    .disabled(store.savingImages)
+                                Button { store.saveImagesLocally() } label: { railRow("photo", store.savingImages ? "Saving images…" : "Save images locally") }
+                                    .buttonStyle(.plain).disabled(store.savingImages)
                             }
-                            Text("Document").foregroundStyle(Palette.muted)
-                            HStack { Text("Mode"); Spacer(); Picker("Mode", selection: $store.mode) {
-                                ForEach(EditorMode.allCases, id: \.self) { Text($0.title).tag($0) }
-                            }.labelsHidden().frame(width: 140) }
-                            HStack { Text("Words"); Spacer(); Text("\(store.words)").foregroundStyle(Palette.secondary) }
-                            HStack { Text("Status"); Spacer(); Text(store.status).foregroundStyle(Palette.secondary) }
-                            Text(selected).font(.system(size: 12)).foregroundStyle(Palette.muted)
-                                .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                        }
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Options").foregroundStyle(Palette.muted).padding(.bottom, 4)
-                            Button { store.toggleBookmark(selected) } label: {
-                                Label(store.isBookmarked(selected) ? "Remove bookmark" : "Bookmark note", systemImage: "bookmark")
-                            }
-                            Button { store.togglePin(selected) } label: {
-                                Label(store.isPinned(selected) ? "Unpin note" : "Pin to top of folder", systemImage: "pin")
-                            }
-                            Button { store.reveal() } label: { Label("Show in Finder", systemImage: "folder") }
+                            Button { store.togglePin(selected) } label: { railRow(store.isPinned(selected) ? "pin.slash" : "pin", store.isPinned(selected) ? "Unpin from folder" : "Pin to top of folder") }.buttonStyle(.plain)
+                            Button { store.reveal() } label: { railRow("folder", "Show in Finder") }.buttonStyle(.plain)
                         }
                     } else {
-                        Text("Select a note to see its properties and options.").foregroundStyle(Palette.muted)
+                        Text("Open a note to see its details.").foregroundStyle(Palette.faint)
                     }
-                }.font(.system(size: 13)).padding(20).frame(maxWidth: .infinity, alignment: .leading)
+                }.font(Typeface.ui(13)).padding(16).frame(maxWidth: .infinity, alignment: .leading)
             }
-            Spacer(minLength: 0)
-        }.background(Palette.sidebar)
+        }
+        .background(Palette.canvas)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(Palette.border, lineWidth: 1) }
+        .padding(.top, Self.titlebarHeight)
     }
 
-
+    func railSection<Content: View>(_ title: String, action: (() -> Void)? = nil, actionIcon: String = "plus", actionLabel: String = "", @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title).font(Typeface.ui(12, 500)).foregroundStyle(Palette.muted)
+                Spacer()
+                if let action { Button(action: action) { ChromeIcon(actionIcon, size: 11) }.buttonStyle(ChromeButtonStyle(size: 22)).accessibilityLabel(actionLabel).help(actionLabel) }
+            }.frame(height: 22)
+            content()
+        }
+    }
+    func railRow(_ icon: String, _ text: String) -> some View {
+        HStack(spacing: 8) {
+            ChromeIcon(icon, size: 12)
+            Text(text).foregroundStyle(Palette.secondary).lineLimit(1)
+            Spacer(minLength: 0)
+        }.frame(height: 30).contentShape(Rectangle())
+    }
 }
 
 struct SidebarRow: View {
@@ -265,22 +221,24 @@ struct SidebarRow: View {
     @State private var dropEdge: Int? = nil
     @FocusState private var focused: Bool
     var body: some View {
-        HStack(spacing: 7) {
+        let isSelected = store.selected == item.path
+        let expanded = store.isExpanded(item.path)
+        HStack(spacing: 8) {
+            ChromeIcon(item.isFolder ? (expanded && !bookmark ? "folder.fill" : "folder") : "doc.text", size: 13, color: isSelected ? Palette.primary : Palette.muted)
+            Text(item.title).font(Typeface.ui(13, 500)).foregroundStyle(isSelected ? Palette.primary : Palette.secondary).lineLimit(1)
             if item.isFolder && !bookmark {
-                Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold)).rotationEffect(.degrees(store.isExpanded(item.path) ? 90 : 0)).frame(width: 9).foregroundStyle(Palette.muted)
-            } else { Spacer().frame(width: 9) }
-            Image(systemName: item.isFolder ? (store.isExpanded(item.path) ? "folder.fill" : "folder") : "doc.text").font(.system(size: 12, weight: .regular)).foregroundStyle(store.selected == item.path ? Palette.primary : Palette.muted).frame(width: 15)
-            Text(item.title).font(.system(size: 13, weight: store.selected == item.path ? .medium : .regular)).lineLimit(1)
+                Image(systemName: "triangle.fill").font(.system(size: 5)).foregroundStyle(Palette.muted).rotationEffect(.degrees(expanded ? 180 : 90))
+            }
             Spacer(minLength: 3)
-            if store.isPinned(item.path) && !bookmark { Image(systemName: "pin.fill").font(.system(size: 8)).foregroundStyle(Palette.muted) }
-        }.padding(.leading, CGFloat(depth * 14 + 8)).padding(.trailing, 11).frame(height: 34)
-            .background(store.selected == item.path ? Palette.control : hovering ? Palette.panel : .clear, in: RoundedRectangle(cornerRadius: 8))
+            if store.isPinned(item.path) && !bookmark { Image(systemName: "pin.fill").font(.system(size: 8)).foregroundStyle(Palette.faint) }
+        }.padding(.leading, CGFloat(depth * 20 + 8)).padding(.trailing, 8).frame(height: 30)
+            .background(isSelected ? Palette.selected : hovering ? Palette.hover : .clear, in: RoundedRectangle(cornerRadius: 6))
             .overlay(alignment: dropEdge == -1 ? .top : .bottom) { if let edge = dropEdge, edge != 0 { Rectangle().fill(Palette.accent).frame(height: 2) } }
-            .overlay { if dropEdge == 0 { RoundedRectangle(cornerRadius: 8).stroke(Palette.accent, lineWidth: 1) } }
+            .overlay { if dropEdge == 0 { RoundedRectangle(cornerRadius: 6).stroke(Palette.accent, lineWidth: 1) } }
             .contentShape(Rectangle()).onTapGesture { store.select(item.path) }.onHover { hovering = $0 }
             .focusable().focused($focused).onKeyPress(.return) { store.select(item.path); return .handled }
             .onKeyPress(.space) { store.select(item.path); return .handled }
-            .overlay { RoundedRectangle(cornerRadius: 8).stroke(focused ? Palette.accent : .clear, lineWidth: 2) }
+            .overlay { RoundedRectangle(cornerRadius: 6).stroke(focused ? Palette.accent : .clear, lineWidth: 2) }
             .accessibilityAction { store.select(item.path) }
             .accessibilityAddTraits(store.selected == item.path ? .isSelected : [])
             .accessibilityElement(children: .combine).accessibilityAddTraits(.isButton)
@@ -291,7 +249,7 @@ struct SidebarRow: View {
             .contextMenu {
                 if item.isFolder { Button("New note here") { store.create(parent: item.path) }; Button("New folder here…") { store.create(folder: true, parent: item.path) }; Divider() }
                 Button(store.isPinned(item.path) ? "Unpin" : "Pin to top of folder") { store.togglePin(item.path) }
-                Button(store.isBookmarked(item.path) ? "Remove bookmark" : "Bookmark") { store.toggleBookmark(item.path) }
+                Button(store.isBookmarked(item.path) ? "Remove from Favorites" : "Add to Favorites") { store.toggleBookmark(item.path) }
                 Divider(); Button("Rename…") { store.rename(item) }; Button("Show in Finder") { store.reveal(item.path) }
                 Divider(); Button("Move to Trash…", role: .destructive) { store.trash(item) }
             }

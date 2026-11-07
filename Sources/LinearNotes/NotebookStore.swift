@@ -46,6 +46,11 @@ struct NoteHeading: Identifiable { let id: Int; let level: Int; let text: String
     var focusNewNote: Bool { get { activeTab.focusNewNote } set { activeTab.focusNewNote = newValue } }
     var words: Int { get { activeTab.words } set { activeTab.words = newValue } }
     @Published var rootName = "My notes"
+    @Published var recent: [String] = []
+    @Published var favoritesCollapsed = UserDefaults.standard.bool(forKey: "favoritesCollapsed") { didSet { UserDefaults.standard.set(favoritesCollapsed, forKey: "favoritesCollapsed") } }
+    @Published var notesCollapsed = UserDefaults.standard.bool(forKey: "notesCollapsed") { didSet { UserDefaults.standard.set(notesCollapsed, forKey: "notesCollapsed") } }
+    @Published var visitIndex = -1
+    var visits: [NavigationVisit] = []
     var library: NoteLibrary?
     var baseline: String { get { activeTab.baseline } set { activeTab.baseline = newValue } }
     var dirty: Bool { get { activeTab.dirty } set { activeTab.dirty = newValue } }
@@ -105,7 +110,7 @@ struct NoteHeading: Identifiable { let id: Int; let level: Int; let text: String
             catch { if acquired { url.stopAccessingSecurityScopedResource() }; throw error }
             securityURL?.stopAccessingSecurityScopedResource(); securityURL = acquired ? url : nil
             sessionSave?.cancel(); resetWorkspace(); sessions = nextSessions
-            library = next; rootName = url.lastPathComponent; selected = nil; markdown = ""; baseline = ""; dirty = false
+            library = next; loadRecent(); rootName = url.lastPathComponent; selected = nil; markdown = ""; baseline = ""; dirty = false
             error = nil; conflict = false; saveFailed = false; items = try next.scan(); documentVersion += 1
             headings = []; activeHeading = -1; refreshSearch()
             if remember, let bookmark = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) { UserDefaults.standard.set(bookmark, forKey: "notesFolderBookmark") }
@@ -289,6 +294,15 @@ struct NoteHeading: Identifiable { let id: Int; let level: Int; let text: String
         let ext = (item.name as NSString).pathExtension
         move(item.path, parent: item.parent, newName: item.isFolder ? name : name + "." + ext)
     }
+    /// Renames a note from its in-document title, as Linear does. A rejected name reloads the note so the title shows the real file name again.
+    func retitle(_ path: String, to title: String) {
+        afterSave { [self] in
+            let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let item = items.first(where: { $0.path == path && !$0.isFolder }), !name.isEmpty, name != item.title else { return }
+            finishMove(path, parent: item.parent, before: nil, newName: name + "." + (item.name as NSString).pathExtension)
+            if items.contains(where: { $0.path == path }) { for tab in allTabs where tab.selected == path { tab.documentVersion += 1 } }
+        }
+    }
     func move(_ path: String, parent: String, before: String? = nil, newName: String? = nil) {
         afterSave { [self] in finishMove(path, parent: parent, before: before, newName: newName) }
     }
@@ -298,6 +312,7 @@ struct NoteHeading: Identifiable { let id: Int; let level: Int; let text: String
             // Seed order from what is actually visible, including previously unindexed files.
             library.sidebar.order[parent] = children(parent).map(\.path)
             let next = try library.move(path, to: parent, before: before, newName: newName)
+            remapNavigation(path, to: next)
             sessions = Dictionary(uniqueKeysWithValues: sessions.map { key, value in
                 (key == path || key.hasPrefix(path + "/") ? next + key.dropFirst(path.count) : key, value)
             })
