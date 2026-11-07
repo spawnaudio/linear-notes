@@ -1,7 +1,7 @@
 # Overhaul v2 — Linear Fidelity Spec
 
-**Status:** Draft for review · 22 October 2026 · updated during step 2
-**Branch:** `experiments/claude/app-overhaul-v2`
+**Status:** Merged into main as Linear Notes v2 · 7 November 2026 ([#8](https://github.com/spawnaudio/linear-notes/pull/8))
+**Branch:** `experiments/claude/app-overhaul-v2` (merged)
 **Purpose:** Define exactly how Linear Notes changes so its shell, tabs, and writing experience read as Linear Documents running as a standalone Mac app.
 
 ---
@@ -465,7 +465,7 @@ These defaults are applied unless SPAWN changes them.
 | Collapsible sections on disk | Stored as HTML `<details><summary>` | A custom Markdown fence |
 | Accent | Linear indigo `#5E6AD2` | Keep the current lavender `#8794F5` |
 | Typeface | **Bundled Inter** | System SF Pro only |
-| App identity | Packaged as **Linear Notes Overhaul.app** with its own bundle identifier, so it can run beside v2 without sharing window state | Share v2's identifier and settings |
+| App identity | ~~Packaged as **Linear Notes Overhaul.app** with its own bundle identifier~~ Merged into main as **Linear Notes v2.app**, keeping `local.linearnotes.app` and its settings (SPAWN, 7 November 2026) | Separate identifier for side-by-side runs |
 
 ---
 
