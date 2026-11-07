@@ -2,6 +2,11 @@
 
 This document records feature-set changes and additions after the original product outline. The original outline remains in [Linear Notes - v1.0 Ideation](<Linear Notes - v1.0 Ideation.md>).
 
+## 2.0.0 — Linear Notes v2 · 10 October 2026
+
+- Renamed the packaged app to **Linear Notes v2.app**, version **2.0.0** (build 8), with the existing features from 1.3.4.
+- Retained the bundle identity and local storage conventions so existing notebooks, settings, and the saved Linear connection remain compatible.
+
 ## 1.3.4 — Replace text and refresh linked documents · 10 October 2026
 
 - Added Find and Replace (`⌘⌥F`), Replace all, and one-step undo in Live Preview and Source. Reading stays read-only; Source retains exact frontmatter and line endings during replacement and undo/redo.
