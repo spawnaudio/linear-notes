@@ -4,7 +4,7 @@ Linear Project: [Linear Notes App](https://linear.app/spawn-audio/project/linear
 
 A minimal macOS notes app inspired by [Linear Documents](https://linear.app/docs/documents) and [Markdown Preview](https://markdownpreview.app). Your notes are ordinary local Markdown files. No account is required for local notes. Linear import is optional.
 
-> **Overhaul v2 experiment.** This branch builds **Linear Notes Overhaul.app**, a redesign that follows Linear's document design as closely as possible. It has its own bundle identifier, so it runs beside the shipped app with separate window settings. Notes folders are shared files, so compare the two apps on a copy of a notes folder. See [`docs/Overhaul v2 - Linear Fidelity Spec.md`](docs/Overhaul%20v2%20-%20Linear%20Fidelity%20Spec.md).
+> **Linear-faithful redesign.** Version 2 follows Linear's document design as closely as possible: the shell, sidebar, tabs, and writing experience are described in [`docs/Overhaul v2 - Linear Fidelity Spec.md`](docs/Overhaul%20v2%20-%20Linear%20Fidelity%20Spec.md). It keeps the `local.linearnotes.app` identity, so existing notebooks, settings, and the saved Linear connection carry over.
 
 ## Try it
 

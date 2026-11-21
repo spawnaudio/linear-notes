@@ -3,8 +3,7 @@ import AppKit
 import UniformTypeIdentifiers
 import NotesCore
 
-// The overhaul experiment has its own identifiers so it can run beside the shipped app (spec §15).
-let tabType = UTType(exportedAs: "local.linearnotes.overhaul.tab", conformingTo: .data)
+let tabType = UTType(exportedAs: "local.linearnotes.tab", conformingTo: .data)
 
 struct NotePaneView: View {
     @ObservedObject var store: NotebookStore

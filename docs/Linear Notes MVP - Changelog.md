@@ -2,6 +2,13 @@
 
 This document records feature-set changes and additions after the original product outline. The original outline remains in [Linear Notes - v1.0 Ideation](<Linear Notes - v1.0 Ideation.md>).
 
+## Unreleased — Linear-faithful redesign · 7 November 2026
+
+- Merged the overhaul experiment ([#8](https://github.com/spawnaudio/linear-notes/pull/8)): Linear's tokens and bundled Inter, an inverted-L shell with back, forward, and history, Linear-style tabs, a new sidebar, page header, and `⌘K` command menu.
+- The document title is the file name and renames the note in place. Added the properties row, floating toolbar, grouped slash menu, `@` note mentions, outline markers, heading links, collapsible sections stored as `<details>`, and `⌘↩` checklists. Icons are SF Symbols.
+- Kept the **Linear Notes v2** name and the `local.linearnotes.app` identity, so notebooks, settings, and the saved Linear connection carry over. The tab drag type returns to `local.linearnotes.tab`.
+- The native build and the 36 native tests have not yet been run on macOS for this change. Editor tests pass 35 of 36 on Linux Chromium; the remaining failure is the existing Linux-only undo test.
+
 ## 2.0.0 — Linear Notes v2 · 10 October 2026
 
 - Renamed the packaged app to **Linear Notes v2.app**, version **2.0.0** (build 8), with the existing features from 1.3.4.
